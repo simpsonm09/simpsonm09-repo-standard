@@ -8,6 +8,7 @@
 import { EXIT } from './lib/exit.mjs';
 import { isMain, run } from './lib/proc.mjs';
 import { runTest as runAgentAccess } from './agent-access.test.mjs';
+import { runTest as runAgentAccessContract } from './agent-access-contract.test.mjs';
 import { runTest as runAllChecks } from './all-checks.test.mjs';
 import { runTest as runEnv } from './env.test.mjs';
 import { runTest as runPatchCoverage } from './patch-coverage.test.mjs';
@@ -18,7 +19,7 @@ import { runTest as runRulesetPolicy } from './ruleset-policy.test.mjs';
 import { runTest as runScripting } from './scripting.test.mjs';
 import { runTest as runSubprocess } from './subprocess.test.mjs';
 
-const SUITES = [runAgentAccess, runAllChecks, runPatchCoverage, runProc, runRepoMaintenance, runRequired, runRulesetPolicy, runScripting, runEnv, runSubprocess];
+const SUITES = [runAgentAccess, runAgentAccessContract, runAllChecks, runPatchCoverage, runProc, runRepoMaintenance, runRequired, runRulesetPolicy, runScripting, runEnv, runSubprocess];
 
 export function runTests() {
   let failed = false;

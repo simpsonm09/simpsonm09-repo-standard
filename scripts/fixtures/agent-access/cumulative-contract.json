@@ -1,0 +1,33 @@
+{
+  "name": "cumulative-agent-access-contract",
+  "selectableLevels": ["propose", "merge", "full"],
+  "internalBaseline": {
+    "level": "read",
+    "grants": ["read"]
+  },
+  "levels": {
+    "propose": {
+      "grants": ["read", "pushBranch", "openPr"],
+      "adds": ["pushBranch", "openPr"]
+    },
+    "merge": {
+      "grants": ["read", "pushBranch", "openPr", "mergePr"],
+      "adds": ["mergePr"]
+    },
+    "full": {
+      "grants": ["read", "pushBranch", "openPr", "mergePr", "pushMain", "admin"],
+      "adds": ["pushMain", "admin"]
+    }
+  },
+  "neverGranted": ["forbidden"],
+  "hardProtection": {
+    "ruleset": "protect-main",
+    "kind": "covered",
+    "bypassActors": []
+  },
+  "approvalCounts": {
+    "propose": 1,
+    "merge": 1,
+    "full": 0
+  }
+}

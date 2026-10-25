@@ -62,6 +62,12 @@
       "description": "Run the agent-access enforcement tests over the fixture catalog and the pre-push hook."
     },
     {
+      "id": "test-agent-access-contract",
+      "kind": "portable",
+      "run": "node scripts/agent-access-contract.test.mjs",
+      "description": "Check the cumulative agent-access contract and its generated ruleset policy."
+    },
+    {
       "id": "test-all-checks",
       "kind": "portable",
       "run": "node scripts/all-checks.test.mjs",

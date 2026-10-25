@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Encode `merge` and `full` as cumulative capability grants and add a named pure
+  contract fixture covering the level deltas, fail-closed unknown levels,
+  required hard checks, no App bypass, and level-specific approval counts.
+- Clarify ownership of catalog assignments, standard capabilities and rulesets,
+  organization gate adapters, Maxstack installation, and the separate App
+  identity; document ignore policy and the limits of these guardrails.
+- Correct the catalog source description to include its local-ref and
+  working-tree fallbacks, seed contract increments from the internal read
+  baseline, and distinguish technical grants from task authorization and
+  personal-layer policy.
 - Add committed `upstream/main:ignore.json` destination denies and validate full
   case-insensitive identities. Preserve broad `full` push/admin capabilities,
   resolve invalid or missing policy levels to the internal read-only baseline,

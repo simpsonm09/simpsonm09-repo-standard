@@ -43,6 +43,10 @@ coverage:
 test-agent-access:
     {{op}} run test-agent-access
 
+# Check the cumulative agent-access contract and its generated ruleset policy.
+test-agent-access-contract:
+    {{op}} run test-agent-access-contract
+
 # Run the all-checks aggregate workflow policy tests over local fixtures.
 test-all-checks:
     {{op}} run test-all-checks

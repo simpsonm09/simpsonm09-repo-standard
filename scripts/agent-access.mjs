@@ -36,13 +36,17 @@ export const LEVELS = ['propose', 'merge', 'full'];
 
 // A level grants a set of capabilities. Enforcement points ask for a
 // capability, never for a level, so this table is the single mapping from the
-// policy in policy.md to a decision.
+// policy in policy.md to a decision. Each selectable level extends the one
+// before it, so a higher grant cannot accidentally omit a lower capability.
+const PROPOSE_CAPABILITIES = ['read', 'pushBranch', 'openPr'];
+const MERGE_CAPABILITIES = [...PROPOSE_CAPABILITIES, 'mergePr'];
+
 export const CAPABILITIES = {
   none: [],
   read: ['read'],
-  propose: ['read', 'pushBranch', 'openPr'],
-  merge: ['read', 'pushBranch', 'openPr', 'mergePr'],
-  full: ['read', 'pushBranch', 'openPr', 'mergePr', 'pushMain', 'admin'],
+  propose: PROPOSE_CAPABILITIES,
+  merge: MERGE_CAPABILITIES,
+  full: [...MERGE_CAPABILITIES, 'pushMain', 'admin'],
 };
 
 // The level an unknown repository or an unreadable catalog resolves to. It

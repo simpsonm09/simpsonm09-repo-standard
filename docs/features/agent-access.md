@@ -11,7 +11,8 @@ resolver and the push guard live here, because the standard owns enforcement.
 `agentAccess` override on a repository. The effective selectable level is the
 override when present, otherwise the tier default. The selectable levels are
 `propose`, `merge`, and `full`. `read` is an internal baseline for unknown
-repositories and invalid or missing policy values; it grants no writes.
+repositories and invalid or missing policy values; it grants no writes. `none`
+is also an internal empty capability set, not a catalog level.
 
 ## Capabilities
 
@@ -19,12 +20,55 @@ An enforcement point never asks for a level. It asks whether the repository gran
 capability, so the mapping from the policy to a decision lives in one table in
 [`../../scripts/agent-access.mjs`](../../scripts/agent-access.mjs).
 
-| Level | Grants |
-| --- | --- |
-| Internal `read` baseline | `read` |
-| `propose` | `read`, `pushBranch`, `openPr` |
-| `merge` | `read`, `pushBranch`, `openPr`, `mergePr` |
-| `full` | `read`, `pushBranch`, `openPr`, `mergePr`, `pushMain`, `admin` |
+| Level | Grants | Added at this level |
+| --- | --- | --- |
+| Internal `read` baseline | `read` | — |
+| `propose` | `read`, `pushBranch`, `openPr` | `pushBranch`, `openPr` |
+| `merge` | all `propose` grants, plus `mergePr` | `mergePr` |
+| `full` | all `merge` grants, plus `pushMain`, `admin` | `pushMain`, `admin` |
+
+The table is cumulative: selecting a higher level retains every lower-level
+grant. The resolver encodes that relationship directly, and the named
+`test-agent-access-contract` operation checks the grants against
+[`cumulative-contract.json`](../../scripts/fixtures/agent-access/cumulative-contract.json)
+and the shared ruleset builder.
+
+## Ownership and scope
+
+The catalog owns repository and tier level assignments. This standard owns the
+capability meanings, the shared resolver, the main ruleset payloads, and the
+checks that compare policy with protection. The organization plugin owns its
+harness gate adapters and bundled resolver API; Maxstack owns installing and
+composing plugin layers. The personal plugin layer supplies personal-account
+identity, services, and preferences; it cannot redefine repository grant
+policy. Those gates consult the standard resolver, but remain guardrails around
+a user's personal identity. The GitHub App installation is a separate identity
+and permission grant, governed by the App manifest and the catalog's
+installation policy.
+
+Levels describe technical capabilities, not task authorization or an instruction
+to exercise every grant. An authorized `propose` task can push a feature branch
+and open a pull request; neither operation requires `full`. A `full` assignment
+does not by itself authorize publishing or activating a particular change.
+Publication and activation follow the task's standing or explicit authorization
+and the repository's gates.
+
+An explicit committed ignore entry denies its listed destination before normal
+read or capability handling. The catalog loader tries `upstream/main`, then the
+local `main` ref; if neither loads, the CLI can read the working-tree catalog
+file. A per-repository `agentAccess` override takes precedence over its tier
+default in whichever catalog was loaded. Therefore roster grants do not always
+come from an organization-controlled ref, and a local ref or file can influence
+resolution when the fallback is used. The ignore, owned-fork, and owned-repository
+loaders are stricter: they read only from `upstream/main`, and invalid or missing
+policy does not create a grant. This roster-source limitation is documented for
+a separate migration; it does not weaken the ignore or owned-policy source
+checks. An explicit CLI `--catalog` path also reads that selected file. Command
+text and adapter inputs remain untrusted and the gate's classifier is not a
+universal shell boundary. App permissions and branch protection are separate
+controls: an access level does not change App permissions, and a full grant does
+not remove required checks, signatures, or other hard protection. These
+mechanisms are guardrails, not a universal sandbox.
 
 ## The resolver
 
@@ -357,8 +401,8 @@ decided from observed git state.
 ## Reading the policy from committed refs
 
 The roster comes from `upstream/main`, then `main`. The owned-fork policy comes
-from `upstream/main` **only**. A local `main` ref is writable by the same user
-who runs the agent, so it is never a grant source: a forged
+from `upstream/main` **only**. For owned-fork data, local `main` is writable by
+the same user who runs the agent, so it is never a grant source: a forged
 `main:owned-forks.json` would otherwise add a write target. A missing, malformed,
 or unsupported policy closes the owned-fork and upstream kinds, so every write to
 them is denied. The reader applies the catalog validator's shape rules, accepts
@@ -418,9 +462,11 @@ It exits `1` on any drift, including an unreadable ruleset, and `0` when clean. 
 is local only: it is not wired into CI, because it needs a token that can read the
 rulesets and it reports live state rather than a repository fact.
 
-The resolver reads the committed catalog from the clone, preferring the
-organization ref the agent cannot push to, so an uncommitted edit to the working
-tree cannot raise a level. A missing catalog or clone denies remote writes.
+The resolver prefers the catalog at `upstream/main`, then uses local `main` if
+that organization ref is unavailable. The CLI reads the working-tree catalog
+file if neither ref loads. This compatibility fallback means a missing
+organization ref does not, by itself, make roster grants fail closed. A missing
+catalog or clone still denies remote writes.
 
 ## The push guard
 
