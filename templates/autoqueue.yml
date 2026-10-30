@@ -1,0 +1,48 @@
+name: autoqueue
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review, edited]
+
+permissions: {}
+
+concurrency:
+  group: autoqueue-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  autoqueue:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Observe or request native auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Set both repository variables only after aggregate, ruleset, setting, and fixture proof are complete.
+          AUTOQUEUE_MODE: ${{ vars.AUTOQUEUE_ENABLED == 'true' && vars.AUTOQUEUE_PREREQUISITES_VERIFIED == 'true' && 'enable' || 'observe' }}
+          AUTOQUEUE_PR_NUMBER: ${{ github.event.pull_request.number }}
+          AUTOQUEUE_BASE_OWNER: ${{ github.repository_owner }}
+          AUTOQUEUE_BASE_NAME: ${{ github.event.repository.name }}
+          AUTOQUEUE_BASE_REPO_ID: ${{ github.event.repository.id }}
+          AUTOQUEUE_STATE: ${{ github.event.pull_request.state }}
+          AUTOQUEUE_DRAFT: ${{ github.event.pull_request.draft }}
+          AUTOQUEUE_MERGED: ${{ github.event.pull_request.merged }}
+          AUTOQUEUE_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          AUTOQUEUE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AUTOQUEUE_HEAD_REPO_ID: ${{ github.event.pull_request.head.repo.id }}
+          AUTOQUEUE_AUTHOR_LOGIN: ${{ github.event.pull_request.user.login }}
+          AUTOQUEUE_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
+          AUTOQUEUE_MERGEABLE: ${{ github.event.pull_request.mergeable }}
+          AUTOQUEUE_MERGE_COMMIT_ALLOWED: ${{ github.event.repository.allow_merge_commit }}
+        run: node templates/autoqueue/run.mjs
