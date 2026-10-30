@@ -44,6 +44,12 @@ Targets `refs/tags/v*`. Blocks update, deletion, and force push.
 
 A required status check must be reported by a job that the repository runs. A required check with no job never reports, so every pull request waits on it forever. The required set follows the repository's coverage job.
 
+The local `ci.yml` workflow also has an `all-checks` job. It waits for every other parsed job in that workflow and succeeds only when every dependency result is `success`; failure, cancellation, and skipping fail the aggregate. The checker requires the dependency list to close over every job it recognizes, including platform test jobs, and in those recognized job blocks conservatively scans for the spelling `continue-on-error` followed by a colon. That lexical scan may also reject comments or literal script text containing that spelling. Conditional verification steps are rejected. The aggregate must use the supported plain-key shape: `if: always()`, `ubuntu-24.04`, a five-minute timeout, and `permissions: {}`; exactly one step with `env.NEEDS` set to `${{ toJSON(needs) }}`; and the pinned run command `echo "$NEEDS" | jq -e 'all(.[]; .result == "success")'`. Job and step keys are allowlisted, and workflow-level `defaults` or `env` are unsupported because they can change how that command runs. The checker accepts benign spacing and comments only where it can parse them reliably. It is a bounded contract checker, not a general YAML parser: quoted aggregate field keys or otherwise unrecognized keys, duplicate job keys, explicit mapping keys, and unsupported aggregate shapes produce a gap. This conservative rule can produce a false red for valid YAML outside the supported form; that is intentional, and unknown forms are never silently treated as safe. The reusable-workflow caller contract is structurally checked; its result propagation has not yet been proven by a real fixture-repository run.
+
+`all-checks` is deliberately not yet in the required ruleset contexts. The exported `ALL_CHECKS_REQUIRED` readiness flag in `scripts/lib/required.mjs` remains false while consumers are migrated. Rollout order: add the aggregate to each repository's `ci.yml`, verify a green run and caller propagation, then enable the flag in the ruleset contract. While the flag is false, a missing aggregate is allowed; any aggregate that is present is still checked for its full job closure and supported safe shape. This does not rename or replace any existing required context.
+
+The aggregate covers jobs in `.github/workflows/ci.yml` only. A separate `codeql.yml` workflow is outside its `needs` graph. The committed `protect-main` payload does not require CodeQL, and [automation.md](automation.md#codeql) says it is not a required status check. No live repository contexts were read for this change; leave any existing live CodeQL requirement untouched during rollout. Do not treat `all-checks` as proof that every workflow or every possible check has passed.
+
 A repository has one of two coverage states.
 
 - **Covered.** The repository has a coverage job. It calls the shared `coverage` workflow, defines the `coverage` recipe, and requires `coverage / coverage`. Covered is the default: a repository is covered unless it has an entry, below.
@@ -57,13 +63,15 @@ The checker enforces the rule. Each gap prints its id.
 
 - `ci/coverage` (`check-standard`): ci.yml has no `coverage` job. `check-standard` cannot read exceptions, so an uncovered repository shows this gap until `check-repo` applies its entry.
 - `ci/coverage-unrequired` (`check-repo`): an uncovered repository calls the coverage workflow.
-- `ruleset/required-missing`, `ruleset/required-no-job`, and `ruleset/required-unexpected` (`check-repo` with the API, on a public repository): the live `protect-main` requires a set other than the one the repository expects, or requires a check that no job reports.
+- `ruleset/protect-main` and `ruleset/ambiguous` (`check-repo` with the API, on a public repository): no uniquely named `protect-main` ruleset can be selected.
+- `ruleset/enforcement` and `ruleset/main-target`: the selected ruleset is not active or its conditions cannot be verified to cover `main`.
+- `ruleset/required-missing`, `ruleset/required-no-job`, and `ruleset/required-unexpected`: the live `protect-main` requires a set other than the one the repository expects, or requires a check that no job reports.
 
 The apply script builds each repository's payload from the committed file. It adds `coverage / coverage` for a covered repository and removes it for an uncovered one.
 
 ## Code owners and reviewers
 
-`CODEOWNERS` is `* @simpsonm09` in every repository. GitHub auto-requests the code owner as an optional reviewer, because `require_code_owner_review` is `false`. The review is not a gate.
+The effective CODEOWNERS file must assign the default `*` pattern to the exact owner identity `@simpsonm09`; repositories may retain specific path routes, comments, and additional owners. Any wildcard-only pattern made from `/` and `*` must also include `@simpsonm09`, since it can override the default for the whole repository. The root `CODEOWNERS` path remains required, and when `.github/CODEOWNERS` exists the checker also validates it because GitHub gives it precedence. GitHub auto-requests the code owner as an optional reviewer, because `require_code_owner_review` is `false`. The review is not a gate.
 
 GitHub never requests the pull-request author as a reviewer. A self-authored pull request shows no request. This is expected, not a missing configuration.
 
