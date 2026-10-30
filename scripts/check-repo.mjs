@@ -8,7 +8,7 @@ import { checkStandard } from './check-standard.mjs';
 import { loadExceptions, findException } from './lib/exceptions.mjs';
 import { jobsCalling, parseJobs } from './lib/ci.mjs';
 import { normalize, readText } from './lib/tree.mjs';
-import { kindOf, rulesetGaps, uncoveredCallGaps } from './lib/required.mjs';
+import { kindOf, protectMainSelection, rulesetGaps, uncoveredCallGaps } from './lib/required.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STANDARD_ROOT = resolve(HERE, '..');
@@ -74,29 +74,35 @@ function checkApi(repo, add, notice, ci) {
   else if (!(topics.value?.names ?? []).includes(owner)) add('settings/topics', `topics do not include the owner "${owner}"`);
 
   if (value.visibility !== 'public') return;
-  checkPublicRuleset(repo, add, notice, ci);
+  checkPublicRuleset(repo, add, notice, ci, value.default_branch);
 }
 
-function checkPublicRuleset(repo, add, notice, ci) {
-  const rulesets = ghJson(['api', '--paginate', `repos/${repo}/rulesets`, '--jq', '[.[] | select(.name=="protect-main")] | length']);
+function checkPublicRuleset(repo, add, notice, ci, defaultBranch) {
+  const rulesets = ghJson(['api', '--paginate', '--slurp', `repos/${repo}/rulesets`, '--jq', '[.[][] | select(.name=="protect-main")] | length']);
   if (!rulesets.ok) {
     notice(`cannot read ${repo} rulesets: ${rulesets.error}`);
     return;
   }
-  if (Number(rulesets.value) === 0) {
-    add('ruleset/protect-main', 'public repository has no protect-main ruleset');
+  const selection = protectMainSelection(Number(rulesets.value));
+  if (!selection.ok) {
+    add(selection.id, selection.message);
     return;
   }
-  checkRulesetApprovals(repo, add, notice, ci);
+  checkRulesetApprovals(repo, add, notice, ci, defaultBranch);
 }
 
-function checkRulesetApprovals(repo, add, notice, ci) {
-  const id = ghJson(['api', `repos/${repo}/rulesets`, '--jq', '.[] | select(.name=="protect-main") | .id']);
+function checkRulesetApprovals(repo, add, notice, ci, defaultBranch) {
+  const id = ghJson(['api', '--paginate', '--slurp', `repos/${repo}/rulesets`, '--jq', '[.[][] | select(.name=="protect-main") | .id]']);
   if (!id.ok) {
     notice(`cannot read the protect-main id: ${id.error}`);
     return;
   }
-  const detail = ghJson(['api', `repos/${repo}/rulesets/${id.value}`]);
+  if (!Array.isArray(id.value) || id.value.length !== 1
+    || !Number.isSafeInteger(id.value[0]) || id.value[0] < 1) {
+    add('ruleset/ambiguous', 'could not select exactly one numeric protect-main id');
+    return;
+  }
+  const detail = ghJson(['api', `repos/${repo}/rulesets/${id.value[0]}`]);
   if (!detail.ok) {
     notice(`cannot read protect-main: ${detail.error}`);
     return;
@@ -104,7 +110,7 @@ function checkRulesetApprovals(repo, add, notice, ci) {
   const rule = (detail.value.rules ?? []).find((entry) => entry.type === 'pull_request');
   const count = rule?.parameters?.required_approving_review_count;
   if (count !== 1) add('ruleset/approval', `protect-main requires ${count ?? 'no'} approving review, expected 1`);
-  for (const gap of rulesetGaps(detail.value, ci)) add(gap.id, gap.message);
+  for (const gap of rulesetGaps(detail.value, { ...ci, defaultBranch })) add(gap.id, gap.message);
 }
 
 function readJobs(root) {

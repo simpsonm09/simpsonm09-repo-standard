@@ -15,29 +15,29 @@ concurrency:
 jobs:
   lint:
     if: github.repository_owner == 'simpsonm09-org'
-    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/lint.yml@5da707371e38c6391df83d13b487a01253379457 # repo-standard, pinned commit
+    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/lint.yml@864a6a7cb1f6b89978740fbd1a139cd965f1d408 # repo-standard, pinned commit
   aislop:
     if: github.repository_owner == 'simpsonm09-org'
     permissions:
       contents: read
       security-events: write
-    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/aislop.yml@5da707371e38c6391df83d13b487a01253379457 # repo-standard, pinned commit
+    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/aislop.yml@864a6a7cb1f6b89978740fbd1a139cd965f1d408 # repo-standard, pinned commit
   security:
     if: github.repository_owner == 'simpsonm09-org'
     permissions:
       contents: read
       security-events: write
-    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/security.yml@5da707371e38c6391df83d13b487a01253379457 # repo-standard, pinned commit
+    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/security.yml@864a6a7cb1f6b89978740fbd1a139cd965f1d408 # repo-standard, pinned commit
   standard:
     if: github.repository_owner == 'simpsonm09-org'
     permissions:
       contents: read
-    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/standard.yml@5da707371e38c6391df83d13b487a01253379457 # repo-standard, pinned commit
+    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/standard.yml@864a6a7cb1f6b89978740fbd1a139cd965f1d408 # repo-standard, pinned commit
   coverage:
     if: github.repository_owner == 'simpsonm09-org'
     permissions:
       contents: read
-    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/coverage.yml@5da707371e38c6391df83d13b487a01253379457 # repo-standard, pinned commit
+    uses: simpsonm09-org/simpsonm09-repo-standard/.github/workflows/coverage.yml@864a6a7cb1f6b89978740fbd1a139cd965f1d408 # repo-standard, pinned commit
 
   # Required check. Every repository defines `just test`; replace the step below
   # with the repository test command when the generic task runner call is not enough.
