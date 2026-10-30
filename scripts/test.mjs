@@ -13,10 +13,11 @@ import { runTest as runPatchCoverage } from './patch-coverage.test.mjs';
 import { runTest as runProc } from './proc.test.mjs';
 import { runTest as runRepoMaintenance } from './repo-maintenance.test.mjs';
 import { runTest as runRequired } from './required.test.mjs';
+import { runTest as runRulesetPolicy } from './ruleset-policy.test.mjs';
 import { runTest as runScripting } from './scripting.test.mjs';
 import { runTest as runSubprocess } from './subprocess.test.mjs';
 
-const SUITES = [runAgentAccess, runPatchCoverage, runProc, runRepoMaintenance, runRequired, runScripting, runEnv, runSubprocess];
+const SUITES = [runAgentAccess, runPatchCoverage, runProc, runRepoMaintenance, runRequired, runRulesetPolicy, runScripting, runEnv, runSubprocess];
 
 export function runTests() {
   let failed = false;

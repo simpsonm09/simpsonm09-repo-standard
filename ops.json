@@ -62,6 +62,12 @@
       "description": "Run the agent-access enforcement tests over the fixture catalog and the pre-push hook."
     },
     {
+      "id": "test-ruleset-policy",
+      "kind": "portable",
+      "run": "node scripts/ruleset-policy.test.mjs",
+      "description": "Run local ruleset approval and explicit auto-merge setting tests."
+    },
+    {
       "id": "test-patch-coverage",
       "kind": "portable",
       "run": "node scripts/patch-coverage.test.mjs",
@@ -166,7 +172,7 @@
       "kind": "portable",
       "args": true,
       "run": "node scripts/check-agent-access.mjs",
-      "description": "Check the declared agent access level against the live protect-main ruleset."
+      "description": "Check the declared level against both live main rulesets."
     },
     {
       "id": "create-agent-app",
@@ -209,7 +215,7 @@
       "kind": "portable",
       "args": true,
       "run": "node scripts/ruleset-payload.mjs",
-      "description": "Print a ruleset payload for a repository at its agent access level."
+      "description": "Print a hard-protection or approval-only ruleset payload for a repository level."
     }
   ]
 }
