@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Request `issues: write` for the fleet agent App so policy-authorized issue
+  creation can work after an App owner approves the permission update and the
+  installation grant. This does not add App administration.
 - Validate active `protect-main` ruleset targeting when the API response is readable; ambiguous names and unmodeled target patterns produce gaps. API read failures remain notices and do not establish protection.
 - Update the five starter CI reusable workflow pins to the reviewed published standard commit `6f754925`.
 - Add a default coverage recipe and Python LCOV scaffold to the starter templates, and clarify that coverage opt-outs require a reviewed exception in the standard.
