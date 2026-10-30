@@ -43,6 +43,10 @@ coverage:
 test-agent-access:
     {{op}} run test-agent-access
 
+# Run local ruleset approval and explicit auto-merge setting tests.
+test-ruleset-policy:
+    {{op}} run test-ruleset-policy
+
 # Run the patch-coverage matcher tests.
 test-patch-coverage:
     {{op}} run test-patch-coverage
@@ -107,7 +111,7 @@ audit-fleet *args:
 agent-access *args:
     {{op}} run agent-access {{args}}
 
-# Check the declared agent access level against the live protect-main ruleset.
+# Check the declared level against both live main rulesets.
 check-agent-access *args:
     {{op}} run check-agent-access {{args}}
 
@@ -131,6 +135,6 @@ apply-settings *args:
 apply-rulesets *args:
     {{op}} run apply-rulesets {{args}}
 
-# Print a ruleset payload for a repository at its agent access level.
+# Print a hard-protection or approval-only ruleset payload for a repository level.
 ruleset-payload *args:
     {{op}} run ruleset-payload {{args}}

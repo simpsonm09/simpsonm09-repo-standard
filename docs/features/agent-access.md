@@ -291,13 +291,12 @@ adapter decides whether the command's directory is in scope.
 ## The drift check
 
 [`../../scripts/check-agent-access.mjs`](../../scripts/check-agent-access.mjs) reads
-the declared level per repository and the live `protect-main` ruleset, then reports
-the approval count and whether the App bypass matches. The App is present on the
-bypass exactly when the level grants a merge, so `merge` and `full` expect it and
-`none`, `read`, and `propose` do not. The mode must match the level too: `merge`
-expects the App with `pull_request`, and `full` expects `always`, because a `full`
-repository pushes to `main` directly. A correct App with the wrong mode is drift,
-and the reason names the mode it found and the one it expected.
+the declared level per repository and compares both active main rulesets. It
+requires unique `protect-main` and `approval-main` rulesets targeting exactly
+`main`, zero approval and no bypass actors on `protect-main`, and the expected
+approval count on `approval-main`. `propose` and `merge` require one approval with
+an organization-admin PR-only bypass; `full` requires zero approvals and no bypass
+actors. Any App actor, extra actor, missing ruleset, or unreadable count is drift.
 
 ```bash
 node scripts/check-agent-access.mjs          # exits 1 on drift, 0 when clean
@@ -362,11 +361,10 @@ Move it into Infisical, where the runtime loads it as `AGENT_APP_PRIVATE_KEY` be
 `AGENT_APP_ID`.
 
 The installation is the per-repository grant. `none` and `read` get no installation.
-`propose`, `merge`, and `full` get one. `merge` adds the fleet agent's GitHub App
-integration to the ruleset bypass list with mode `pull_request`, and `full` with mode
-`always`. The committed `rulesets/protect-main.json` is the base. The apply script adds
-this entry per repository, according to its level. No actor id is written in the
-repository. See [governance](../governance.md#bypass-actors).
+`propose`, `merge`, and `full` get one. No GitHub App integration appears in either
+main ruleset or bypasses protection at any level. The human approval bypass for
+`propose` and `merge` is confined to `approval-main`. See
+[governance](../governance.md#bypass-actors).
 
 ## The token broker
 

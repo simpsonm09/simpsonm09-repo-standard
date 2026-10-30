@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Split main-branch approval policy into an always-present `approval-main` ruleset. Keep `protect-main` at zero required approvals with signed commits, pull requests, strict existing checks, and no bypass actors; use one human admin PR-only bypass for `propose`/`merge`, and no approval bypass for `full`. Unknown and legacy levels fail closed during application.
+- Make `allow_auto_merge` an explicit `apply-settings` option (`--allow-auto-merge on|off`), dry-run by default and unchanged when omitted.
 - Validate active `protect-main` ruleset targeting when the API response is readable; ambiguous names and unmodeled target patterns produce gaps. API read failures remain notices and do not establish protection.
 - Update the five starter CI reusable workflow pins to the reviewed published standard commit `6f754925`.
 - Add a default coverage recipe and Python LCOV scaffold to the starter templates, and clarify that coverage opt-outs require a reviewed exception in the standard.
