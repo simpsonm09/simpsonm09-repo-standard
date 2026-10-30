@@ -127,7 +127,7 @@ function testMethodClassifier(assert) {
     ['gh api -XHEAD repos/o/r', null],
     ['gh api repos/o/r', null],
     ['gh api -X', null],
-    ['gh api -XPOSTED repos/o/r', null],
+    ['gh api -XPOSTED repos/o/r', 'admin'],
     ['gh api --method GET repos/o/r', null],
     ['gh api -X POST repos/o/r', 'admin'],
     ['gh api -XPOST repos/o/r', 'admin'],
@@ -140,6 +140,8 @@ function testMethodClassifier(assert) {
     ['gh api -Xdelete repos/o/r', 'admin'],
     ['gh api --method POST repos/o/r', 'admin'],
     ['gh api --method=POST repos/o/r', 'admin'],
+    ['gh api -X FROB repos/o/r', 'admin'],
+    ['gh api -XFROB repos/o/r', 'admin'],
   ];
   for (const [command, expected] of cases) {
     const capability = classify(command);
@@ -219,6 +221,48 @@ function testApiBodyClassifier(assert) {
   assert(read.allowed === false && read.capability === 'admin', 'a read level denies the attached body flag');
   const full = decide('full', 'gh api graphql -fquery=mutation');
   assert(full.allowed === true && full.capability === 'admin', 'a full level allows the attached body flag');
+}
+
+function testGhFallbackClassifier(assert) {
+  const cases = [
+    ['gh issue create --title "--help"', 'admin'],
+    ['gh pr edit 52 --title "--help"', 'admin'],
+    ['gh issue create --title -h', 'admin'],
+    ['gh --help', null],
+    ['gh -h', null],
+    ['gh --version', null],
+    ['gh issue --help', null],
+    ['gh -h issue create --title x', 'admin'],
+    ['gh --version issue create --title x', 'admin'],
+    ['gh --help pr merge 52', 'admin'],
+    ['gh issue --help create --title x', 'admin'],
+    ['gh help issue create --title x', 'admin'],
+    ['gh help pr', 'admin'],
+    ['gh auth token', 'admin'],
+    ['gh auth status', 'admin'],
+    ['gh auth status --show-token', 'admin'],
+    ['gh auth status -t', 'admin'],
+    ['gh status', null],
+    ['gh search repos foo', null],
+    ['gh search foo x', 'admin'],
+    ['gh repo unarchive o/r', 'admin'],
+    ['gh mystery view', 'admin'],
+    ['gh mystery list', 'admin'],
+    ['gh pr list', null],
+    ['gh issue list', null],
+    ['gh release list', null],
+    ['gh workflow list', null],
+    ['gh api -X GET repos/o/r', null],
+    ['gh api repos/o/r', null],
+  ];
+  for (const [command, expected] of cases) {
+    assert(classify(command) === expected, `classify ${JSON.stringify(command)} -> ${expected}, got ${classify(command)}`);
+  }
+  assert(decide('read', 'gh issue create --title "--help"').allowed === false, 'help-like title does not make a write safe');
+  assert(decide('none', 'gh auth token').allowed === false, 'auth token needs admin');
+  assert(decide('read', 'gh auth status --show-token').allowed === false, 'token-bearing auth status needs admin');
+  assert(decide('none', 'gh -h issue create --title x').allowed === false, 'help before a write verb needs admin');
+  assert(decide('read', 'gh api -X FROB repos/o/r').allowed === false, 'unknown API method is not a read');
 }
 
 // Level one, destination half: one policy truth governs the organization
@@ -809,6 +853,7 @@ export function runTest() {
     testMethodClassifier(assert);
     testPushClassifier(assert);
     testApiBodyClassifier(assert);
+    testGhFallbackClassifier(assert);
     testDestinationPolicy(assert);
     testCommittedOwnedForks(assert);
     testCommittedOwnedRepositories(assert);

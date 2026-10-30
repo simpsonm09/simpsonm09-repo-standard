@@ -57,7 +57,9 @@ The checker enforces the rule. Each gap prints its id.
 
 - `ci/coverage` (`check-standard`): ci.yml has no `coverage` job. `check-standard` cannot read exceptions, so an uncovered repository shows this gap until `check-repo` applies its entry.
 - `ci/coverage-unrequired` (`check-repo`): an uncovered repository calls the coverage workflow.
-- `ruleset/required-missing`, `ruleset/required-no-job`, and `ruleset/required-unexpected` (`check-repo` with the API, on a public repository): the live `protect-main` requires a set other than the one the repository expects, or requires a check that no job reports.
+- `ruleset/protect-main` and `ruleset/ambiguous` (`check-repo` with the API, on a public repository): no uniquely named `protect-main` ruleset can be selected.
+- `ruleset/enforcement` and `ruleset/main-target`: the selected ruleset is not active or its conditions cannot be verified to cover `main`.
+- `ruleset/required-missing`, `ruleset/required-no-job`, and `ruleset/required-unexpected`: the live `protect-main` requires a set other than the one the repository expects, or requires a check that no job reports.
 
 The apply script builds each repository's payload from the committed file. It adds `coverage / coverage` for a covered repository and removes it for an uncovered one.
 
