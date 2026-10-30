@@ -343,9 +343,19 @@ The guard fails closed on remote writes.
 
 The boundary is a separate identity, a GitHub App named in
 [`../../agent-app.manifest.json`](../../agent-app.manifest.json). The manifest
-requests `contents`, `pull_requests`, and `workflows` at write, and `checks` and
-`metadata` at read. It never requests `administration`, so the identity cannot change
-settings or rulesets.
+requests `contents`, `issues`, `pull_requests`, and `workflows` at write, and
+`checks` and `metadata` at read. The `issues: write` grant supports issue creation
+for repositories whose policy level allows it. The App never requests
+`administration`, so it cannot change repository settings or rulesets, even at the
+`full` level.
+
+Changing this manifest does not change an existing App or installation. An App
+owner must approve the requested permission update, then approve the updated
+permissions for the installation. Until then, tokens retain only the permissions
+GitHub has approved. Policy capabilities and token permissions are separate limits:
+a level may authorize issue creation, but an installation token can do it only when
+the App and that installation both have `issues: write`. The `full` level does not
+grant GitHub App administration or bypass GitHub's permission limits.
 
 GitHub has no API to create an app, so
 [`../../scripts/create-agent-app.mjs`](../../scripts/create-agent-app.mjs) drives the
