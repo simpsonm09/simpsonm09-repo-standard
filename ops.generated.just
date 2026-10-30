@@ -43,6 +43,38 @@ coverage:
 test-agent-access:
     {{op}} run test-agent-access
 
+# Check the portable App contract against the resolver, manifest, and ruleset payloads.
+test-portable-app-contract:
+    {{op}} run test-portable-app-contract
+
+# Check planned agent App identity routing against fake installation and credential ports.
+test-agent-identity-route:
+    {{op}} run test-agent-identity-route
+
+# Run the fixed-endpoint App executor fixtures with fake signer and HTTP ports only.
+test-fleet-app-executor:
+    {{op}} run test-fleet-app-executor
+
+# Run the stdio carrier fixtures with fake signer and HTTP ports only.
+test-fleet-broker-stdio:
+    {{op}} run test-fleet-broker-stdio
+
+# Collect bounded push-range facts in synthetic local Git repositories without credentials.
+test-git-push-facts:
+    {{op}} run test-git-push-facts
+
+# Check setup listener loopback and cancellation using fake servers only.
+test-app-setup-listener:
+    {{op}} run test-app-setup-listener
+
+# Run the all-checks aggregate workflow policy tests over local fixtures.
+test-all-checks:
+    {{op}} run test-all-checks
+
+# Run local ruleset approval and explicit auto-merge setting tests.
+test-ruleset-policy:
+    {{op}} run test-ruleset-policy
+
 # Run the patch-coverage matcher tests.
 test-patch-coverage:
     {{op}} run test-patch-coverage
@@ -107,7 +139,7 @@ audit-fleet *args:
 agent-access *args:
     {{op}} run agent-access {{args}}
 
-# Check the declared agent access level against the live protect-main ruleset.
+# Check the declared level against both live main rulesets.
 check-agent-access *args:
     {{op}} run check-agent-access {{args}}
 
@@ -131,6 +163,6 @@ apply-settings *args:
 apply-rulesets *args:
     {{op}} run apply-rulesets {{args}}
 
-# Print a ruleset payload for a repository at its agent access level.
+# Print a hard-protection or approval-only ruleset payload for a repository level.
 ruleset-payload *args:
     {{op}} run ruleset-payload {{args}}

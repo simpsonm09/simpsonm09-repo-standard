@@ -62,6 +62,54 @@
       "description": "Run the agent-access enforcement tests over the fixture catalog and the pre-push hook."
     },
     {
+      "id": "test-portable-app-contract",
+      "kind": "portable",
+      "run": "node scripts/portable-app-contract.test.mjs",
+      "description": "Check the portable App contract against the resolver, manifest, and ruleset payloads."
+    },
+    {
+      "id": "test-agent-identity-route",
+      "kind": "portable",
+      "run": "node scripts/agent-identity-route.test.mjs",
+      "description": "Check planned agent App identity routing against fake installation and credential ports."
+    },
+    {
+      "id": "test-fleet-app-executor",
+      "kind": "portable",
+      "run": "node tools/fleet-app-broker/fixture.mjs",
+      "description": "Run the fixed-endpoint App executor fixtures with fake signer and HTTP ports only."
+    },
+    {
+      "id": "test-fleet-broker-stdio",
+      "kind": "portable",
+      "run": "node tools/fleet-app-broker/stdio-fixture.mjs",
+      "description": "Run the stdio carrier fixtures with fake signer and HTTP ports only."
+    },
+    {
+      "id": "test-git-push-facts",
+      "kind": "portable",
+      "run": "node tools/git-push-facts/fixture.mjs",
+      "description": "Collect bounded push-range facts in synthetic local Git repositories without credentials."
+    },
+    {
+      "id": "test-app-setup-listener",
+      "kind": "portable",
+      "run": "node scripts/app-setup-listener.test.mjs",
+      "description": "Check setup listener loopback and cancellation using fake servers only."
+    },
+    {
+      "id": "test-all-checks",
+      "kind": "portable",
+      "run": "node scripts/all-checks.test.mjs",
+      "description": "Run the all-checks aggregate workflow policy tests over local fixtures."
+    },
+    {
+      "id": "test-ruleset-policy",
+      "kind": "portable",
+      "run": "node scripts/ruleset-policy.test.mjs",
+      "description": "Run local ruleset approval and explicit auto-merge setting tests."
+    },
+    {
       "id": "test-patch-coverage",
       "kind": "portable",
       "run": "node scripts/patch-coverage.test.mjs",
@@ -166,7 +214,7 @@
       "kind": "portable",
       "args": true,
       "run": "node scripts/check-agent-access.mjs",
-      "description": "Check the declared agent access level against the live protect-main ruleset."
+      "description": "Check the declared level against both live main rulesets."
     },
     {
       "id": "create-agent-app",
@@ -209,7 +257,7 @@
       "kind": "portable",
       "args": true,
       "run": "node scripts/ruleset-payload.mjs",
-      "description": "Print a ruleset payload for a repository at its agent access level."
+      "description": "Print a hard-protection or approval-only ruleset payload for a repository level."
     }
   ]
 }

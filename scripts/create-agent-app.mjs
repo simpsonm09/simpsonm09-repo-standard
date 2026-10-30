@@ -19,6 +19,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { startSetupListener } from './lib/app-setup-listener.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MANIFEST_PATH = join(ROOT, 'agent-app.manifest.json');
@@ -106,7 +107,7 @@ function failurePage(message) {
   return `<!doctype html><html><body><h1>Creation failed</h1><pre>${escapeHtml(message)}</pre></body></html>`;
 }
 
-async function exchange(code) {
+async function exchange(code, signal) {
   if (typeof code !== 'string' || !/^[A-Za-z0-9]+$/.test(code)) {
     throw new Error('invalid code from GitHub');
   }
@@ -116,6 +117,7 @@ async function exchange(code) {
   }
   const response = await fetch(endpoint, {
     method: 'POST',
+    signal,
     headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' },
   });
   if (!response.ok) throw new Error(`conversion failed: ${response.status} ${await response.text()}`);
@@ -168,7 +170,8 @@ async function main() {
         return;
       }
       try {
-        const data = await exchange(url.searchParams.get('code'));
+        const data = await exchange(url.searchParams.get('code'), abortController.signal);
+        abortController.signal.throwIfAborted();
         const { keyPath, metaPath } = store(data);
         finished = true;
         response.writeHead(200, { 'Content-Type': 'text/html' });
@@ -191,15 +194,34 @@ async function main() {
     response.end('not found');
   });
 
-  server.listen(args.port, () => {
-    process.stdout.write(`create-agent-app: open http://localhost:${args.port}/\n`);
-    process.stdout.write(`create-agent-app: the browser posts the manifest to ${createUrl(args.org, state)}\n`);
-    if (!args.noOpen) openBrowser(`http://localhost:${args.port}/`);
-  });
-
-  server.on('close', () => {
+  const abortController = new AbortController();
+  const abort = () => abortController.abort();
+  process.once('SIGINT', abort);
+  process.once('SIGTERM', abort);
+  server.once('close', () => {
+    process.removeListener('SIGINT', abort);
+    process.removeListener('SIGTERM', abort);
     if (!finished) process.stderr.write('create-agent-app: closed before the app was created\n');
   });
+  startSetupListener(server, {
+    port: args.port,
+    signal: abortController.signal,
+    onStop: (reason, error) => {
+      abortController.abort();
+      if (!finished) process.exitCode = 1;
+      if (reason === 'listen-failed') {
+        const code = ['EADDRINUSE', 'EACCES', 'EADDRNOTAVAIL'].includes(error?.code)
+          ? error.code : 'listen-failed';
+        process.stderr.write(`create-agent-app: ${code}\n`);
+      }
+    },
+    onListening: () => {
+      process.stdout.write(`create-agent-app: open http://localhost:${args.port}/\n`);
+      process.stdout.write(`create-agent-app: the browser posts the manifest to ${createUrl(args.org, state)}\n`);
+      if (!args.noOpen) openBrowser(`http://localhost:${args.port}/`);
+    },
+  });
+
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
