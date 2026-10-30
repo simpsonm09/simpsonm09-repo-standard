@@ -8,6 +8,9 @@
 import { EXIT } from './lib/exit.mjs';
 import { isMain, run } from './lib/proc.mjs';
 import { runTest as runAgentAccess } from './agent-access.test.mjs';
+import { runTest as runPortableAppContract } from './portable-app-contract.test.mjs';
+import { runTest as runAgentIdentityRoute } from './agent-identity-route.test.mjs';
+import { runTest as runAppSetupListener } from './app-setup-listener.test.mjs';
 import { runTest as runAllChecks } from './all-checks.test.mjs';
 import { runTest as runEnv } from './env.test.mjs';
 import { runTest as runPatchCoverage } from './patch-coverage.test.mjs';
@@ -18,13 +21,16 @@ import { runTest as runRulesetPolicy } from './ruleset-policy.test.mjs';
 import { runTest as runScripting } from './scripting.test.mjs';
 import { runTest as runSubprocess } from './subprocess.test.mjs';
 
-const SUITES = [runAgentAccess, runAllChecks, runPatchCoverage, runProc, runRepoMaintenance, runRequired, runRulesetPolicy, runScripting, runEnv, runSubprocess];
+const SUITES = [runAgentAccess, runPortableAppContract, runAgentIdentityRoute, runAppSetupListener, runAllChecks, runPatchCoverage, runProc, runRepoMaintenance, runRequired, runRulesetPolicy, runScripting, runEnv, runSubprocess];
 
 export function runTests() {
   let failed = false;
   for (const suite of SUITES) {
     if (suite() !== EXIT.OK) failed = true;
   }
+  if (run(process.execPath, ['scripts/op.mjs', 'run', 'test-fleet-app-executor']) !== EXIT.OK) failed = true;
+  if (run(process.execPath, ['scripts/op.mjs', 'run', 'test-fleet-broker-stdio']) !== EXIT.OK) failed = true;
+  if (run(process.execPath, ['scripts/op.mjs', 'run', 'test-git-push-facts']) !== EXIT.OK) failed = true;
   if (run(process.execPath, ['scripts/op.mjs', 'run', 'test-agent-token']) !== EXIT.OK) failed = true;
   return failed ? EXIT.FAIL : EXIT.OK;
 }

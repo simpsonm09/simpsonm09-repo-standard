@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- Report uncertain PR creation as `outcome-unknown` after dispatch instead of
+  claiming a denial. Never retry a potentially completed write.
+
+- Add an inactive fixed-endpoint App executor for repository reads and PR
+  creation with pinned policy, narrowed tokens, immutable authorized requests,
+  bounded response cleanup, and fake-only fixtures. No deployed credential or
+  caller route changes.
+
+- Add bounded local Git push-range facts, including intermediate and merge-parent
+  workflow changes. Reject incomplete history and subdirectory roots, isolate
+  fixture Git overrides, and enforce aggregate time and merge-parent limits.
+  This collects facts only; no broker authorization or push transport is added.
+- Restrict the App-creation listener to IPv4 loopback and five minutes. Cancel
+  pending exchange on timeout or interruption; test lifecycle with fake servers.
+  This does not change deployed App credentials or run the creation flow.
+- Add a planned, unconsumed App identity route planner and bounded fake-port
+  fixtures. Keep the existing resolver authoritative, require exact installation
+  scope and permission ceilings, and fail closed without ambient fallback for
+  agent reads or writes. Document that human pass-through is not an authorization
+  grant, commit author/committer/signer are separate from the authentication
+  actor, App ownership/visibility remain undecided, and runtime adoption remains
+  pending. No broker or adapter behavior changes.
+- Add a versioned, local App behavior contract and focused fixture test mapped to
+  the existing classifier, destination resolver, target decision, manifest, and
+  ruleset payloads; register it in the existing test suite. Document rendered,
+  endpoint-specific App permission examples, approval routes, public
+  distribution state boundaries, and current broker limitations without
+  changing token transport. Qualify ignore-policy behavior by host and describe
+  coverage through the `ci/coverage` exception.
 - Add committed `upstream/main:ignore.json` destination denies and validate full
   case-insensitive identities. Preserve broad `full` push/admin capabilities,
   resolve invalid or missing policy levels to the internal read-only baseline,

@@ -296,8 +296,8 @@ malformed destination, is `unknown`. First match wins:
 | owner is the roster `org` and the repository is in the roster | `org` | the roster level |
 | the personal owner's fork of the clone's own governed repository | `org` | the same roster level |
 | a target recorded in `owned-forks.json` | `owned-fork` | `propose` |
-| a recorded `upstream` in `owned-forks.json` | `upstream` | internal `read` baseline |
-| anything else | `unknown` | internal `read` baseline |
+| a recorded `upstream` in `owned-forks.json` | `upstream` | internal `read` baseline when the committed ignore policy is valid |
+| anything else | `unknown` | internal `read` baseline on `github.com` when the committed ignore policy is valid |
 
 An identity in `agentAccessIgnore` resolves to `ignored` before other destination
 matches. It denies reads and writes, including intents with a null capability.
@@ -340,6 +340,12 @@ direct pure call that names only a capability keeps its behavior.
 | `owned-fork` | `read`, `pushBranch`, `openPr` |
 | `upstream` | `read` |
 | `unknown` | `read` |
+
+On `github.com`, the `unknown` read baseline applies only when the committed
+ignore policy is trusted. If that policy is missing or invalid,
+`resolveDestination` marks the source `ignore-unavailable` and `decideTarget`
+denies every `github.com` destination, including reads. Other hosts resolve as
+unknown before the ignore check and keep the read-only baseline.
 
 An owned fork gets a strict subset of `propose`. A branch push is granted only
 for a single ref that is a `branch` and is not the resolved default branch, so a
@@ -451,11 +457,109 @@ The guard fails closed on remote writes.
 
 ## The agent identity
 
+### Portable App behavior contract
+
+[`../../contracts/agent-app-behavior.v1.json`](../../contracts/agent-app-behavior.v1.json)
+is the versioned, local contract for portable consumers. It records behavior of
+the existing `classify`, `resolveDestination`, and `decideTarget` APIs; it does
+not add another decision engine. The focused fixture check is available as
+`just test-portable-app-contract` and is registered in `scripts/test.mjs` for CI.
+The current catalog has not migrated its fleet defaults to `full`, and installed
+API version 3 is pending migration to this contract; the contract is not proof
+that an adapter already consumes these semantics. The ownership identifiers in
+the contract are internal fleet labels; contract version 1 is not a generic
+public API or an external installation compatibility promise.
+
+For example, `classify("gh issue create --title sample")` returns `openPr`.
+That is a policy capability mapping, not proof that the installed App can
+transport the operation: the manifest lacks `issues: write`, so the App route
+must stop until that permission has been reviewed and granted.
+
+The contract separates a local portable package, a separate public source
+repository, a public GitHub App, a hosted service, and a Marketplace listing.
+Those are independent states. This unit provides local source, fixtures, and
+documentation; it does not register or publish an App, create a repository, or
+operate a service.
+
+The selectable workspace level remains the policy ceiling for a destination.
+The manifest's requested permissions form a ceiling; installation acceptance is
+not verified here. Resolver capabilities are broader than a permission map, and
+`admin` is a classifier bucket rather than one GitHub permission. The table
+below gives documented endpoint examples only. A command classified `admin`
+does not establish that the App token can call its endpoint.
+
+| Documented operation and endpoint | GitHub App permission documented for this endpoint | Requested by this manifest |
+|---|---|---|
+| Create a pull request: `POST /repos/{owner}/{repo}/pulls` | Pull requests: write | Yes |
+| Merge a pull request: `PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge` | Contents: write | Yes |
+| Create an issue: `POST /repos/{owner}/{repo}/issues` | Issues: write | No |
+| Dispatch a workflow: `POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches` | Actions: write | No |
+| Enable a workflow: `PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable` | Actions: write | No |
+| Disable a workflow: `PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable` | Actions: write | No |
+| Create or update a file under `.github/workflows`: `PUT /repos/{owner}/{repo}/contents/{path}` | The fine-grained endpoint lists Contents: write, or Contents: write plus Workflows: write. The endpoint notes that the OAuth/classic `workflow` scope is also needed for this path. | Yes |
+| Create or update a repository Actions secret: `PUT /repos/{owner}/{repo}/actions/secrets/{secret_name}` | Secrets: write | No |
+| Create a release: `POST /repos/{owner}/{repo}/releases` | The fine-grained endpoint lists Contents: write, or Contents: write plus Workflows: write. | Yes |
+| Update repository settings: `PATCH /repos/{owner}/{repo}` | Administration: write | No |
+| Other REST write | Endpoint-specific; inspect the exact endpoint | Not inferred by `classify` |
+
+GitHub's endpoint documentation distinguishes `Actions: write` for workflow
+API operations from the Contents/Workflows permission sets for file contents.
+The OAuth/classic `workflow` scope note for workflow files is separate from the
+fine-grained token table. Pull request merge uses `Contents: write`, while pull
+request creation uses `Pull requests: write`. Release and repository secret
+endpoints also have their own permission requirements. See the [workflow endpoints](https://docs.github.com/en/rest/actions/workflows),
+[pull request endpoints](https://docs.github.com/en/rest/pulls/pulls),
+[repository secret endpoints](https://docs.github.com/en/rest/actions/secrets),
+[release endpoints](https://docs.github.com/en/rest/releases/releases),
+[repository endpoints](https://docs.github.com/en/rest/repos/repos), and
+[contents endpoints](https://docs.github.com/en/rest/repos/contents).
+
+These are endpoint examples, not a complete permission map for any classifier
+capability. The endpoint's exact documented requirements govern; a classifier
+result such as `admin` does not identify one permission or guarantee that a call
+is authorized. Manifest presence describes only the requested ceiling. Whether
+an installation accepted a permission is unverified. The App also lacks
+`issues: write`: issue creation maps to `openPr` in the classifier, but App
+transport is unavailable until that permission is reviewed, added, and accepted
+by the installation. No ambient human credential is a fallback.
+
+For `propose` and `merge`, `approval-main` requires one human approval and has an
+OrganizationAdmin pull-request-only bypass. `full` requires zero approvals and
+has no approval bypass. `protect-main` always requires a pull request, signed
+commits, and strict required checks, with no bypass actors. GitHub rulesets are
+the enforcement point; this contract is not a second local approval engine.
+Every full pull request, including CI, security, and permission-changing pull
+requests, has zero required approvals; no path-based rule changes that gate.
+Coverage is required when the repository has no `ci/coverage` exception in
+`docs/exceptions.json`. A repository with that exception does not require
+`coverage / coverage` in the ruleset payload.
+
+At the pure resolver API, unknown destinations on `github.com` retain the
+read-only baseline only when the committed ignore policy is valid. If that
+policy is missing or invalid, the resolver denies reads and writes for every
+`github.com` destination. Other hosts resolve as unknown before ignore-policy
+validation and retain the read-only baseline; writes remain denied. Explicitly
+ignored `github.com` destinations also deny reads and writes. The separate CLI
+destination mode loads the committed ignore policy before calling the resolver
+and exits `2` if it cannot load a valid policy, for any host.
+
+The existing broker scopes tokens to one repository but uses installation
+permission defaults and can print the token to stdout. Its direct launcher is
+reachable to local processes, so the agent-side gate must not be described as
+universal shell isolation. This contract does not probe credentials or invoke
+that launcher. Actor-route fields are audit metadata, not proof of the executing
+actor. Future evidence may record operation, capability, destination class,
+authorization route, resolver pin, and decision, without command bodies, private
+paths, secrets, or token values. There is no mandatory audit sink or sink
+availability gate.
+
 The boundary is a separate identity, a GitHub App named in
 [`../../agent-app.manifest.json`](../../agent-app.manifest.json). The manifest
 requests `contents`, `pull_requests`, and `workflows` at write, and `checks` and
-`metadata` at read. It never requests `administration`, so the identity cannot change
-settings or rulesets.
+`metadata` at read. It never requests `administration`, so endpoints requiring
+Administration: write, such as repository settings updates, are unavailable to
+this App. The `admin` classifier result does not imply any one permission or
+authorize every endpoint.
 
 GitHub has no API to create an app, so
 [`../../scripts/create-agent-app.mjs`](../../scripts/create-agent-app.mjs) drives the
@@ -493,6 +597,56 @@ node scripts/agent-token.mjs simpsonm09-org/simpsonm09-repo-catalog --json
 The app id and key come from `AGENT_APP_ID` and `AGENT_APP_PRIVATE_KEY`, with a
 fallback to the user config directory for development. The token is printed to
 stdout. Never log it, and never write it to a file.
+
+### Planned agent-only identity route (not consumed at runtime)
+
+`just test-git-push-facts` runs a separate synthetic-repository fixture for the
+local push-range fact collector in `tools/git-push-facts`. The collector inspects
+every commit and parent in an explicit immutable range with bounded Git reads;
+it rejects shallow history, subdirectory roots and unbounded new branches. It
+does not authorize a destination, mint a token or push a ref. Use lossless
+`pathBase64` fields for path identity rather than the UTF-8 display field.
+
+The registration helper's listener is restricted to `127.0.0.1` and a five-minute
+deadline. Interrupting it cancels pending exchange before credential storage.
+The named `just test-app-setup-listener` fixture uses fake servers only. This
+hardening does not make the existing credential-storage path safe for public
+distribution, recreate the App, or replace the broker migration.
+
+[`../../scripts/lib/agent-identity-route.mjs`](../../scripts/lib/agent-identity-route.mjs)
+is a pure planner for a future agent-only route. It calls `resolveDestination`
+and `decideTarget` for the exact destination and intent using supplied policy
+data; precomputed allow flags are not consumed. Its supported examples are
+repository reads (`contents:read`), branch pushes (`contents:write`), and PR
+creation (`pull_requests:write`). Requested permissions must match the operation
+example exactly; other operations deny. This is not a complete permission map.
+It does not parse commands, mint credentials, call GitHub, or define a second
+capability grant table. The named fixture is `just test-agent-identity-route`.
+
+For an agent invocation, both reads and writes must use the App route, including
+personal-fork reads and pushes. Policy denial, a missing installation, a
+different installation account or unselected repository, or unavailable
+permission denies the plan. Nothing falls back to the human's ambient GitHub
+credentials. A fake-port mint failure denies invocation as well. The planner's
+`planned` route evidence is not proof of the actor GitHub observed. `author`,
+`committer`, and `signer` remain separate commit metadata and cannot establish
+the authentication actor. The caller must supply trusted policy data, parsed
+intent, and installation observations; this pure planner does not authenticate
+those inputs or protect against a caller that fabricates them. The fake-port
+fixtures prove call behavior and handle containment only, not a live actor or
+commit-metadata separation.
+
+A human invocation returns pass-through/not-governed metadata only. That result
+grants no authorization and does not run an ambient command. Human CLI and UI
+settings remain untouched. The private/public App visibility and App owner are
+undecided, and this contract does not imply installation or activation.
+
+The fake credential/invocation ports exist only to test the local contract. They
+are not broker enforcement or a credential boundary. Adapter adoption is still
+pending: installed API version 3 does not consume this planner. The broker still
+has a raw-token stdout path and environment-key fallback and does not narrow
+permissions per operation. This source-only unit does not fix those runtime
+limitations or claim universal shell coverage.
 
 ## The agent-side gates
 
