@@ -4,7 +4,7 @@ Do these steps once per repository.
 
 ## 1. Add the caller workflow
 
-Copy [`templates/caller-ci.yml`](../templates/caller-ci.yml) to `.github/workflows/ci.yml` in the consuming repository. It calls the reusable lint, aislop, security, and standard workflows. A repository with a coverage job also calls the coverage workflow. A repository without one declares its reason in [`exceptions.json`](exceptions.json) on `ci/coverage`, as described in [governance.md](governance.md#required-checks).
+Copy [`templates/caller-ci.yml`](../templates/caller-ci.yml) to `.github/workflows/ci.yml` in the consuming repository. It calls the reusable lint, aislop, security, standard, and coverage workflows. Keep coverage enabled by default and complete the coverage task described in steps 2 and 3 before running conformance. If the repository cannot use the gate, remove the coverage job and request an exception on `ci/coverage`, keyed by this repository in `docs/exceptions.json` of `simpsonm09-repo-standard`. `check-repo` applies the pinned standard's exception file; an adopter-local exception file does not apply. A new opt-out therefore needs a reviewed change to the standard. See [governance.md](governance.md#required-checks).
 
 The `standard` job runs [`check-repo.mjs`](../scripts/check-repo.mjs) for the repository and applies [`exceptions.json`](exceptions.json) from the pinned standard. It checks the tree-local groups on the pull request. See [`features/fleet-conformance.md`](features/fleet-conformance.md).
 
@@ -22,11 +22,11 @@ The shared jobs do not run tests. Add the repository's own `test` job next to th
 
 ## 2. Add the tool pins
 
-Copy [`templates/mise.toml`](../templates/mise.toml) to the repository root. Run `flint init` to choose linters and formatters, then commit the pins it adds. Replace the placeholder `test` task with the repository test command.
+Copy [`templates/mise.toml`](../templates/mise.toml) to the repository root. Run `flint init` to choose linters and formatters, then commit the pins it adds. Replace the placeholder `test` task with the repository test command. The `coverage` task is a Python example scaffold: replace its dependency-install and test commands with commands for this repository, and ensure the task creates `coverage/lcov.info`. The example assumes a `[test]` extra that installs `pytest-cov`; add that dependency or replace the example with the project's coverage tool. The shared workflow installs pinned tools only; the coverage task must install the repository's own dependencies. See [coverage.md](coverage.md).
 
 ## 3. Add the task runner
 
-Copy [`templates/justfile`](../templates/justfile) to the repository root. It gives a human or an agent one entry point for lint, test, and the AI-slop gate. Copy [`scripts/prune.mjs`](../scripts/prune.mjs) to the repository root as `scripts/prune.mjs` so `just prune` works. See [`task-runner.md`](task-runner.md).
+Copy [`templates/justfile`](../templates/justfile) to the repository root. It gives a human or an agent one entry point for lint, test, coverage, and the AI-slop gate. Keep `just coverage` mapped to the real, self-contained coverage task. Copy [`scripts/prune.mjs`](../scripts/prune.mjs) to the repository root as `scripts/prune.mjs` so `just prune` works. See [`task-runner.md`](task-runner.md).
 
 `just` is pinned in `mise.toml`. Run `mise install` to get it.
 

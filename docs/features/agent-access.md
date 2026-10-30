@@ -89,9 +89,30 @@ match wins.
 | `gh release create\|edit\|delete\|upload` | `admin` |
 | `gh workflow run\|enable\|disable` | `admin` |
 | `gh secret set\|delete` | `admin` |
-| `gh repo create\|delete\|edit\|rename\|transfer\|archive` | `admin` |
-| `gh api` with `-X`/`--method` `POST`/`PUT`/`PATCH`/`DELETE` — including the attached `-XDELETE` gh accepts — or with `-f`/`--field`/`--raw-field`/`--input`, including the attached `-fkey=value` form | `admin` |
-| any other command | none, allowed |
+| `gh repo create\|delete\|edit\|rename\|transfer\|archive\|unarchive\|sync` | `admin` |
+| An unmodeled `gh` command, including `gh pr edit ...` and `gh issue create ...` | `admin` |
+| Known read forms such as `gh pr view`/`list`, `gh status`, and known `gh search` groups | none |
+| `gh auth` commands, including `gh auth token` and `gh auth status --show-token` | `admin` |
+| Bare `gh -h`, `gh --help`, and `gh --version` final controls | none |
+| Other `gh` forms, including an unknown group followed by a read-looking verb | `admin` |
+| `gh api` with an explicit method other than `GET`/`HEAD`, including unknown methods and attached `-XDELETE`, or with `-f`/`--field`/`--raw-field`/`--input` | `admin` |
+| any other non-`gh` command | none, allowed |
+
+The `gh` read contract is intentionally narrow: only listed known read group/verb
+pairs remain unclassified; every other `gh` form needs `admin`. Help and version
+controls are recognized only when the control token is the final argument, never
+by scanning operands such as a title value. A help/version token before another
+argument, and help topics with trailing words, need `admin`. All `gh auth`
+commands need `admin` because token-printing options can expose credentials.
+`gh repo sync` is admin-only; this intentional tightening can deny the fork sync
+workflow at `merge` level and requires its operator to have `admin`. `gh api` with
+an explicit method other than `GET` or `HEAD`,
+including an unknown method, needs `admin`; an omitted method remains a read.
+The `--command` tokenizer handles one command using whitespace and quote
+boundaries. It is not a shell parser and does not inspect wrappers or later
+commands in a compound expression, so it is a CLI classifier rather than a full
+shell enforcement boundary. Ambiguous or unmodeled `gh` forms fail closed within
+that single-command scope.
 
 A `git push` is parsed by tokens, not by position. A flag token (leading `-`) is
 skipped, the first non-flag token is the remote when it is not a refspec, and the
@@ -270,13 +291,12 @@ adapter decides whether the command's directory is in scope.
 ## The drift check
 
 [`../../scripts/check-agent-access.mjs`](../../scripts/check-agent-access.mjs) reads
-the declared level per repository and the live `protect-main` ruleset, then reports
-the approval count and whether the App bypass matches. The App is present on the
-bypass exactly when the level grants a merge, so `merge` and `full` expect it and
-`none`, `read`, and `propose` do not. The mode must match the level too: `merge`
-expects the App with `pull_request`, and `full` expects `always`, because a `full`
-repository pushes to `main` directly. A correct App with the wrong mode is drift,
-and the reason names the mode it found and the one it expected.
+the declared level per repository and compares both active main rulesets. It
+requires unique `protect-main` and `approval-main` rulesets targeting exactly
+`main`, zero approval and no bypass actors on `protect-main`, and the expected
+approval count on `approval-main`. `propose` and `merge` require one approval with
+an organization-admin PR-only bypass; `full` requires zero approvals and no bypass
+actors. Any App actor, extra actor, missing ruleset, or unreadable count is drift.
 
 ```bash
 node scripts/check-agent-access.mjs          # exits 1 on drift, 0 when clean
@@ -341,11 +361,10 @@ Move it into Infisical, where the runtime loads it as `AGENT_APP_PRIVATE_KEY` be
 `AGENT_APP_ID`.
 
 The installation is the per-repository grant. `none` and `read` get no installation.
-`propose`, `merge`, and `full` get one. `merge` adds the fleet agent's GitHub App
-integration to the ruleset bypass list with mode `pull_request`, and `full` with mode
-`always`. The committed `rulesets/protect-main.json` is the base. The apply script adds
-this entry per repository, according to its level. No actor id is written in the
-repository. See [governance](../governance.md#bypass-actors).
+`propose`, `merge`, and `full` get one. No GitHub App integration appears in either
+main ruleset or bypasses protection at any level. The human approval bypass for
+`propose` and `merge` is confined to `approval-main`. See
+[governance](../governance.md#bypass-actors).
 
 ## The token broker
 
@@ -390,7 +409,7 @@ a clone under `projects\repos` or a worktree of one. Any other path is not gated
   the package in Pi's saved `packages` list.
 
 All adapters decide from the first command only. They do not inspect scripts or later
-commands in a chain. Unclassified commands can pass, and the adapters differ in failure
+commands in a chain. Unclassified non-`gh` commands can pass, and the adapters differ in failure
 handling, prompting, and shell coverage. The plugin README's [Known limits](https://github.com/simpsonm09-org/simpsonm09-org-ai-plugin#known-limits)
 and [Known limits (Pi)](https://github.com/simpsonm09-org/simpsonm09-org-ai-plugin#known-limits-pi)
 sections have the complete shared and harness-specific list, including behavior that has not been
