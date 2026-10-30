@@ -109,7 +109,7 @@ const REPOSITORY_PATTERN = /^[A-Za-z0-9._-]{1,100}$/;
 // agree instead of each carrying its own idea of the owner.
 const OWNED_OWNER = 'simpsonm09';
 
-export const DESTINATION_KINDS = ['org', 'owned-fork', 'upstream', 'unknown'];
+export const DESTINATION_KINDS = ['org', 'owned-fork', 'owned-repository', 'upstream', 'unknown'];
 
 // What each target kind may do. `null` means the level's capability table
 // decides, which is the organization case. An owned fork gets a strict subset of
@@ -119,6 +119,7 @@ export const DESTINATION_KINDS = ['org', 'owned-fork', 'upstream', 'unknown'];
 export const CAPABILITIES_BY_KIND = {
   org: null,
   'owned-fork': ['read', 'pushBranch', 'openPr'],
+  'owned-repository': ['read', 'pushBranch', 'openPr'],
   upstream: ['read'],
   unknown: ['read'],
 };
@@ -146,6 +147,76 @@ export function loadCommittedOwnedForks(dir = CATALOG_DIR) {
     return null;
   }
   return trustedOwnedForks(policy);
+}
+
+// This policy covers exact owned repositories with no upstream provenance.
+// It is an independent grant and reads only from the trusted organization ref.
+export function loadCommittedOwnedRepositories(dir = CATALOG_DIR) {
+  let out;
+  try {
+    out = execFileSync('git', ['-C', dir, 'show', 'upstream/main:owned-repositories.json'], {
+      windowsHide: true,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+  } catch {
+    return null;
+  }
+  let policy;
+  try {
+    policy = JSON.parse(out);
+  } catch {
+    return null;
+  }
+  return trustedOwnedRepositories(policy, loadCommittedOwnedForks(dir));
+}
+
+function ownedRepositoriesErrors(policy, ownedForks) {
+  if (policy === null || typeof policy !== 'object' || Array.isArray(policy)) return ['not an object'];
+  if (!ownedForks || ownedForksErrors(ownedForks).length !== 0) return ['the owned-fork policy is unavailable for collision checks'];
+  const errors = [];
+  if (!Object.keys(policy).every((key) => key === 'repositories')) errors.push('an unknown top-level field');
+  if (!Array.isArray(policy.repositories)) return [...errors, 'repositories is not an array'];
+  const occupied = new Set();
+  for (const fork of trustedOwnedForks(ownedForks)?.forks ?? []) {
+    if (isFullyQualified(fork.repository)) occupied.add(fork.repository.toLowerCase());
+    if (isFullyQualified(fork.upstream)) occupied.add(fork.upstream.toLowerCase());
+  }
+  const seen = new Set();
+  for (const [index, entry] of policy.repositories.entries()) {
+    const label = `repositories[${index}]`;
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      errors.push(`${label} is not an object`);
+      continue;
+    }
+    if (!Object.keys(entry).every((key) => ['repository', 'agentAccess'].includes(key))) errors.push(`${label} has an unknown field`);
+    if (!isFullyQualified(entry.repository)) {
+      errors.push(`${label}.repository is not an owner/repository identity`);
+    } else {
+      const identity = entry.repository.toLowerCase();
+      if (entry.repository.split('/')[0].toLowerCase() !== OWNED_OWNER) errors.push(`${label}.repository is not owned by ${OWNED_OWNER}`);
+      if (seen.has(identity)) errors.push(`${label}.repository duplicates an earlier entry`);
+      if (occupied.has(identity)) errors.push(`${label}.repository collides with an owned-fork target or upstream`);
+      seen.add(identity);
+    }
+    if (entry.agentAccess !== 'propose') errors.push(`${label}.agentAccess is not propose`);
+  }
+  return errors;
+}
+
+function trustedOwnedRepositories(policy, ownedForks) {
+  return ownedRepositoriesErrors(policy, ownedForks).length === 0 ? policy : null;
+}
+
+export function resolveOwnedRepository(ownedRepositories, owner, repo, ownedForks) {
+  const identity = destinationIdentity(owner, repo);
+  if (!identity) return { owned: false };
+  for (const entry of trustedOwnedRepositories(ownedRepositories, ownedForks)?.repositories ?? []) {
+    if (entry.repository.toLowerCase() === identity) {
+      return { owned: true, repository: entry.repository, level: 'propose', source: 'owned-repository' };
+    }
+  }
+  return { owned: false };
 }
 
 // The shape rules the catalog validator enforces, applied by the reader. The
@@ -249,7 +320,7 @@ function destinationIdentity(owner, repo) {
 // 4. an owned-fork target -> owned-fork, `propose`
 // 5. a recorded upstream -> upstream, no level, so writes are denied
 // 6. anything else -> unknown, no level, so writes are denied
-export function resolveDestination({ roster, ownedForks, localRepo, host, destination } = {}) {
+export function resolveDestination({ roster, ownedForks, ownedRepositories, localRepo, host, destination } = {}) {
   const unresolved = { kind: 'unknown', owner: null, repo: null, level: 'none', source: 'unknown' };
   if (typeof host !== 'string' || host.toLowerCase() !== GITHUB_HOST) return unresolved;
   const identity = parseDestination(destination);
@@ -259,6 +330,10 @@ export function resolveDestination({ roster, ownedForks, localRepo, host, destin
   const fork = resolveOwnedFork(ownedForks, identity.owner, identity.repo);
   if (fork.owned) {
     return { kind: 'owned-fork', owner: identity.owner, repo: identity.repo, level: fork.level, source: 'owned-fork', upstream: fork.upstream };
+  }
+  const ownedRepository = resolveOwnedRepository(ownedRepositories, identity.owner, identity.repo, ownedForks);
+  if (ownedRepository.owned) {
+    return { kind: 'owned-repository', owner: identity.owner, repo: identity.repo, level: ownedRepository.level, source: 'owned-repository' };
   }
   if (isRecordedUpstream(ownedForks, identity)) {
     return { kind: 'upstream', owner: identity.owner, repo: identity.repo, level: 'none', source: 'upstream' };
@@ -380,8 +455,9 @@ function decidePush(intent) {
 }
 
 // A pull request is allowed only when its head and its base stay in the
-// destination repository. An owner-qualified side that differs, or names an owner
-// without a repository, is ambiguous and denied.
+// destination repository. A side with no owner or repository identity fields is
+// the observed branch-only shorthand; once either identity field is present, both
+// must be non-empty strings that match the destination.
 function decideOpenPr(target, intent) {
   if (!sameRepository(intent.base, target)) return verdict(false, 'openPr', 'the base is another repository');
   if (!sameRepository(intent.head, target)) return verdict(false, 'openPr', 'the head is another repository');
@@ -391,10 +467,13 @@ function decideOpenPr(target, intent) {
 function sameRepository(side, target) {
   if (side === null || side === undefined) return true;
   if (typeof side !== 'object') return false;
+  const hasOwner = Object.prototype.hasOwnProperty.call(side, 'owner');
+  const hasRepo = Object.prototype.hasOwnProperty.call(side, 'repo');
+  if (!hasOwner && !hasRepo) return true;
   const owner = side.owner;
-  if (owner === null || owner === undefined || owner === '') return true;
-  if (typeof owner !== 'string' || typeof side.repo !== 'string') return false;
-  return owner.toLowerCase() === target.owner && side.repo.toLowerCase() === target.repo;
+  const repo = side.repo;
+  if (typeof owner !== 'string' || owner.length === 0 || typeof repo !== 'string' || repo.length === 0) return false;
+  return owner.toLowerCase() === target.owner && repo.toLowerCase() === target.repo;
 }
 
 function verdict(allowed, capability, reason) {
@@ -782,7 +861,7 @@ function assertDestinationPolicy(assert) {
   assert(decideTarget(owned, { ...push(), capability: 'admin' }).allowed === false, 'an owned fork denies an admin verb');
   const crossRepo = { ...push(), capability: 'openPr', base: { owner: 'acme', repo: 'upstream-lib', branch: 'main' } };
   assert(decideTarget(owned, crossRepo).allowed === false, 'an owned fork denies a cross-repository pull request');
-  const sameRepo = { ...push(), capability: 'openPr', base: { owner: null, repo: null, branch: 'main' } };
+  const sameRepo = { ...push(), capability: 'openPr', base: { branch: 'main' } };
   assert(decideTarget(owned, sameRepo).allowed === true, 'an owned fork allows a pull request in the same repository');
   assert(decideTarget(at('pstack-max', 'acme/upstream-lib'), push()).allowed === false, 'an upstream denies a branch push');
   assert(decideTarget(at('pstack-max', 'acme/other'), { capability: null, readOnly: true, resolved: true }).allowed === true, 'an unknown destination allows a read');
@@ -881,7 +960,8 @@ function runDestinationMode(args) {
     process.exit(2);
   }
   const ownedForks = loadCommittedOwnedForks(args.catalogDir);
-  const target = resolveDestination({ roster, ownedForks, localRepo: args.repo, host: args.host, destination: args.destination });
+  const ownedRepositories = loadCommittedOwnedRepositories(args.catalogDir);
+  const target = resolveDestination({ roster, ownedForks, ownedRepositories, localRepo: args.repo, host: args.host, destination: args.destination });
   const outcome = decideTarget(target, intent);
   if (args.json) process.stdout.write(`${JSON.stringify({ ...target, intent, ...outcome })}\n`);
   process.exit(outcome.allowed ? 0 : 1);

@@ -23,9 +23,11 @@ import {
   decideTarget,
   loadCatalog,
   loadCommittedOwnedForks,
+  loadCommittedOwnedRepositories,
   resolveDestination,
   resolveLevel,
   resolveOwnedFork,
+  resolveOwnedRepository,
 } from './agent-access.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -33,6 +35,7 @@ const ROOT = resolve(HERE, '..');
 const RESOLVER = join(HERE, 'agent-access.mjs');
 const FIXTURE_CATALOG = join(HERE, 'fixtures', 'agent-access', 'repos.json');
 const FIXTURE_OWNED_FORKS = join(HERE, 'fixtures', 'agent-access', 'owned-forks.json');
+const FIXTURE_OWNED_REPOSITORIES = join(HERE, 'fixtures', 'agent-access', 'owned-repositories.json');
 const HOOK_TEMPLATE = join(ROOT, 'templates', 'hooks', 'pre-push');
 const EXIT = Object.freeze({ OK: 0, FAIL: 1, USAGE: 2 });
 
@@ -40,6 +43,8 @@ const EXIT = Object.freeze({ OK: 0, FAIL: 1, USAGE: 2 });
 // directly; the loader tests commit it to a throwaway catalog clone.
 const OWNED_FORKS = JSON.parse(readFileSync(FIXTURE_OWNED_FORKS, 'utf8'));
 const [OWNED_ENTRY] = OWNED_FORKS.forks;
+const OWNED_REPOSITORIES = JSON.parse(readFileSync(FIXTURE_OWNED_REPOSITORIES, 'utf8'));
+const PROFILE_REPOSITORY = 'simpsonm09/simpsonm09';
 
 // Each fixture repository and the exact level its catalog entry declares. The
 // catalog is a fixture, so the live roster is never read.
@@ -224,7 +229,7 @@ function testDestinationPolicy(assert) {
   const nest = 'simpsonm09-fixture-nest';
   const dotnet = 'simpsonm09-fixture-dotnet';
   const at = (localRepo, destination, host = 'github.com') =>
-    resolveDestination({ roster, ownedForks: OWNED_FORKS, localRepo, host, destination });
+    resolveDestination({ roster, ownedForks: OWNED_FORKS, ownedRepositories: OWNED_REPOSITORIES, localRepo, host, destination });
 
   const recognized = [
     { name: 'the organization repository', local: nest, destination: `simpsonm09-org/${nest}`, kind: 'org', level: 'propose', source: 'org' },
@@ -232,6 +237,7 @@ function testDestinationPolicy(assert) {
     { name: 'the personal push fork of a propose repository', local: nest, destination: `simpsonm09/${nest}`, kind: 'org', level: 'propose', source: 'personal-fork' },
     { name: 'the personal push fork of a read repository', local: dotnet, destination: `simpsonm09/${dotnet}`, kind: 'org', level: 'read', source: 'personal-fork' },
     { name: 'an owned fork', local: 'pstack-max', destination: OWNED_ENTRY.repository, kind: 'owned-fork', level: 'propose', source: 'owned-fork' },
+    { name: 'an exact standalone owned repository', local: 'simpsonm09', destination: PROFILE_REPOSITORY, kind: 'owned-repository', level: 'propose', source: 'owned-repository' },
     { name: 'a recorded upstream', local: 'pstack-max', destination: OWNED_ENTRY.upstream, kind: 'upstream', level: 'none', source: 'upstream' },
   ];
   for (const { name, local, destination, kind, level, source } of recognized) {
@@ -258,6 +264,11 @@ function testDestinationPolicy(assert) {
   assert(resolveOwnedFork(OWNED_FORKS, OWNED_ENTRY.repository.split('/')[0].toUpperCase(), OWNED_ENTRY.repository.split('/')[1].toUpperCase()).owned === true, 'the owned-fork match is case-insensitive');
   assert(resolveOwnedFork(OWNED_FORKS, OWNED_ENTRY.repository.split('/')[0], 'other').owned === false, 'an unrelated repository is not an owned fork');
   assert(resolveOwnedFork(null, OWNED_ENTRY.repository.split('/')[0], OWNED_ENTRY.repository.split('/')[1]).owned === false, 'a missing policy owns nothing');
+  assert(resolveOwnedRepository(OWNED_REPOSITORIES, 'SIMPSONM09', 'SIMPSONM09', OWNED_FORKS).owned === true, 'the standalone identity matches case-insensitively');
+  assert(resolveOwnedRepository(OWNED_REPOSITORIES, 'simpsonm09', 'other', OWNED_FORKS).owned === false, 'a same-owner repository without an exact record is not owned');
+  assert(resolveOwnedRepository(OWNED_REPOSITORIES, 'acme', 'simpsonm09', OWNED_FORKS).owned === false, 'a foreign owner with the same repository name is not owned');
+  assert(resolveOwnedRepository({ repositories: [{ repository: OWNED_ENTRY.repository, agentAccess: 'propose' }] }, 'simpsonm09', OWNED_ENTRY.repository.split('/')[1], OWNED_FORKS).owned === false, 'a standalone record cannot collide with an owned-fork target');
+  assert(resolveOwnedRepository({ repositories: [{ repository: OWNED_ENTRY.upstream, agentAccess: 'propose' }] }, ...OWNED_ENTRY.upstream.split('/'), OWNED_FORKS).owned === false, 'a standalone record cannot collide with a fork upstream');
 
   // A raw policy object a pure caller passes in must satisfy the same validation
   // the committed loader applies, including the single personal owner. A policy
@@ -299,6 +310,7 @@ function testDestinationPolicy(assert) {
   assert(['mergePr', 'pushMain', 'admin'].every((capability) => !ownedGrant.includes(capability)), 'the owned fork grants no merge, main push, or admin');
 
   const owned = at('pstack-max', OWNED_ENTRY.repository);
+  const standalone = at('simpsonm09', PROFILE_REPOSITORY);
   const push = (extra) => ({
     operation: 'push',
     capability: 'pushBranch',
@@ -325,7 +337,7 @@ function testDestinationPolicy(assert) {
     ['a merge', push({ capability: 'mergePr' }), false],
     ['an admin verb', push({ capability: 'admin' }), false],
     ['an unknown capability', push({ capability: 'nope' }), false],
-    ['a pull request in the same repository', push({ capability: 'openPr', base: { owner: null, repo: null, branch: 'main' } }), true],
+    ['a pull request with branch-only sides', push({ capability: 'openPr', base: { branch: 'main' }, head: { branch: 'feat/x' } }), true],
     ['a pull request with an owner-qualified same repository base', push({ capability: 'openPr', base: { owner: 'simpsonm09', repo: 'fixture-owned', branch: 'main' } }), true],
     ['a pull request with a cross-owner base', push({ capability: 'openPr', base: { owner: 'acme', repo: 'upstream-lib', branch: 'main' } }), false],
     ['a pull request with an owner-qualified base and no repository', push({ capability: 'openPr', base: { owner: 'simpsonm09', branch: 'main' } }), false],
@@ -334,10 +346,51 @@ function testDestinationPolicy(assert) {
     ['a known read with no capability', { operation: 'read', capability: null, readOnly: true, resolved: true }, true],
     ['an unqualified command with no capability', { operation: 'unknown', capability: null, readOnly: false, resolved: true }, false],
   ];
+  const standaloneTable = [
+    ['a non-default branch push', push(), true],
+    ['a forced branch push', push({ force: true }), false],
+    ['a branch deletion', push({ delete: true }), false],
+    ['a default-branch push', push({ refs: [{ kind: 'branch', name: 'main', isDefault: true }] }), false],
+    ['a tag push', push({ refs: [{ kind: 'tag', name: 'v1', isDefault: false }] }), false],
+    ['a pull request with branch-only sides', push({ capability: 'openPr', base: { branch: 'main' }, head: { branch: 'feat/x' } }), true],
+    ['a pull request with an owner-qualified same repository base', push({ capability: 'openPr', base: { owner: 'simpsonm09', repo: 'simpsonm09', branch: 'main' } }), true],
+    ['a cross-repository pull request', push({ capability: 'openPr', base: { owner: 'acme', repo: 'other', branch: 'main' } }), false],
+    ['a merge', push({ capability: 'mergePr' }), false],
+    ['an admin verb', push({ capability: 'admin' }), false],
+    ['an unknown capability', push({ capability: 'nope' }), false],
+  ];
   for (const [name, intent, expected] of table) {
     const { allowed, reason } = decideTarget(owned, intent);
     assert(allowed === expected, `an owned fork ${expected ? 'allows' : 'denies'} ${name} (${reason})`);
   }
+  for (const [name, intent, expected] of standaloneTable) {
+    const { allowed, reason } = decideTarget(standalone, intent);
+    assert(allowed === expected, `a standalone owned repository ${expected ? 'allows' : 'denies'} ${name} (${reason})`);
+  }
+  const prSideCases = [
+    ['an omitted side', undefined, true],
+    ['a branch-only side', { branch: 'feat/x' }, true],
+    ['a foreign repo-only identity', { repo: 'elsewhere', branch: 'feat/x' }, false],
+    ['a repo-only identity matching the target name', { repo: 'simpsonm09', branch: 'feat/x' }, false],
+    ['an owner-only identity', { owner: 'simpsonm09', branch: 'feat/x' }, false],
+    ['an explicit null owner', { owner: null, repo: 'simpsonm09', branch: 'feat/x' }, false],
+    ['an explicit null repo', { owner: 'simpsonm09', repo: null, branch: 'feat/x' }, false],
+    ['an empty owner with a repository', { owner: '', repo: 'simpsonm09', branch: 'feat/x' }, false],
+    ['a repository with an empty owner', { owner: 'simpsonm09', repo: '', branch: 'feat/x' }, false],
+    ['explicit empty identity fields', { owner: '', repo: '', branch: 'feat/x' }, false],
+    ['an owner without a repo', { owner: 'simpsonm09', branch: 'feat/x' }, false],
+    ['a complete cross-repository identity', { owner: 'acme', repo: 'elsewhere', branch: 'feat/x' }, false],
+  ];
+  for (const target of [owned, standalone]) {
+    const cases = [...prSideCases, ['a case-insensitive full identity match', { owner: target.owner.toUpperCase(), repo: target.repo.toUpperCase(), branch: 'feat/x' }, true]];
+    for (const [sideName, side, expected] of cases) {
+      for (const position of ['base', 'head']) {
+        const intent = push({ capability: 'openPr', ...(side === undefined ? {} : { [position]: side }) });
+        assert(decideTarget(target, intent).allowed === expected, `${target.kind} ${expected ? 'allows' : 'denies'} ${sideName} in PR ${position}`);
+      }
+    }
+  }
+  assert(decideTarget(at('simpsonm09', 'acme/other'), push()).allowed === false, 'a third-party destination denies a branch push');
 
   const orgPropose = at(nest, `simpsonm09-org/${nest}`);
   const orgRead = at(dotnet, `simpsonm09-org/${dotnet}`);
@@ -380,7 +433,7 @@ function testDestinationPolicy(assert) {
 // Build a throwaway clone to stand in for the catalog. `policy` overrides the
 // committed file, `upstream` controls whether the organization ref exists, and
 // `forge` commits a widened policy to the writable local `main` afterwards.
-function makeCatalog({ policy, upstream = true, forge } = {}) {
+function makeCatalog({ policy, ownedRepositories, includeOwnedRepositories = true, upstream = true, forge } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'agent-access-catalog-'));
   const git = (...args) => spawnSync(
     'git',
@@ -394,6 +447,9 @@ function makeCatalog({ policy, upstream = true, forge } = {}) {
   git('init', '-q', '-b', 'main');
   writeFileSync(join(dir, 'repos.json'), readFileSync(FIXTURE_CATALOG));
   writeFileSync(join(dir, 'owned-forks.json'), policy ?? readFileSync(FIXTURE_OWNED_FORKS));
+  if (includeOwnedRepositories) {
+    writeFileSync(join(dir, 'owned-repositories.json'), ownedRepositories ?? readFileSync(FIXTURE_OWNED_REPOSITORIES));
+  }
   commit('the committed policy');
   if (upstream) git('update-ref', 'refs/remotes/upstream/main', 'HEAD');
   if (forge) {
@@ -434,6 +490,42 @@ function testCommittedOwnedForks(assert) {
     assert(loadCommittedOwnedForks(join(readable, 'missing')) === null, 'a missing clone closes the kind');
   } finally {
     for (const dir of [readable, forged, localOnly, unsupported, foreignOwner, mixedOwners, malformed]) rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function testCommittedOwnedRepositories(assert) {
+  const valid = makeCatalog();
+  const missing = makeCatalog({ includeOwnedRepositories: false });
+  const localOnly = makeCatalog({ includeOwnedRepositories: false, upstream: false });
+  const malformed = makeCatalog({ ownedRepositories: '{' });
+  const unknownKey = makeCatalog({ ownedRepositories: JSON.stringify({ repositories: [{ repository: PROFILE_REPOSITORY, agentAccess: 'propose', upstream: 'acme/x' }] }) });
+  const foreignOwner = makeCatalog({ ownedRepositories: JSON.stringify({ repositories: [{ repository: 'acme/profile', agentAccess: 'propose' }] }) });
+  const duplicate = makeCatalog({ ownedRepositories: JSON.stringify({ repositories: [{ repository: PROFILE_REPOSITORY, agentAccess: 'propose' }, { repository: 'SIMPSONM09/SIMPSONM09', agentAccess: 'propose' }] }) });
+  const forkCollision = makeCatalog({ ownedRepositories: JSON.stringify({ repositories: [{ repository: OWNED_ENTRY.repository, agentAccess: 'propose' }] }) });
+  const upstreamCollision = makeCatalog({ ownedRepositories: JSON.stringify({ repositories: [{ repository: OWNED_ENTRY.upstream, agentAccess: 'propose' }] }) });
+  const wrongLevel = makeCatalog({ ownedRepositories: JSON.stringify({ repositories: [{ repository: PROFILE_REPOSITORY, agentAccess: 'merge' }] }) });
+  const forgedLocal = makeCatalog({ ownedRepositories: '{', forge: 'simpsonm09/profile-forged' });
+  const dirs = [valid, missing, localOnly, malformed, unknownKey, foreignOwner, duplicate, forkCollision, upstreamCollision, wrongLevel, forgedLocal];
+  try {
+    const loaded = loadCommittedOwnedRepositories(valid);
+    assert(loaded?.repositories?.[0]?.repository === PROFILE_REPOSITORY, 'the loader reads the exact committed standalone identity');
+    assert(loadCommittedOwnedRepositories(missing) === null, 'a missing standalone policy disables only this grant');
+    assert(loadCommittedOwnedForks(missing)?.forks?.length === 1, 'a missing standalone policy leaves the fork policy available');
+    const forkWithoutStandalone = resolveDestination({ roster: loadCatalog(FIXTURE_CATALOG), ownedForks: loadCommittedOwnedForks(missing), ownedRepositories: null, localRepo: 'pstack-max', host: 'github.com', destination: OWNED_ENTRY.repository });
+    assert(forkWithoutStandalone.kind === 'owned-fork', 'a missing standalone policy leaves existing owned-fork resolution unchanged');
+    assert(loadCommittedOwnedRepositories(valid) !== null && resolveOwnedRepository({ repositories: [] }, 'simpsonm09', 'simpsonm09', OWNED_FORKS).owned === false, 'an empty standalone policy is valid and grants no target');
+    assert(loadCommittedOwnedRepositories(localOnly) === null, 'a local main or working-tree policy is never a grant source');
+    for (const [name, dir] of [
+      ['malformed JSON', malformed], ['unknown key', unknownKey], ['foreign owner', foreignOwner],
+      ['duplicate identity', duplicate], ['fork target collision', forkCollision],
+      ['upstream collision', upstreamCollision], ['wrong access level', wrongLevel],
+    ]) assert(loadCommittedOwnedRepositories(dir) === null, `${name} disables the standalone grant`);
+    const forged = loadCommittedOwnedRepositories(forgedLocal);
+    assert(forged === null, 'a forged local policy cannot grant a standalone repository');
+    const target = resolveDestination({ roster: loadCatalog(FIXTURE_CATALOG), ownedForks: OWNED_FORKS, ownedRepositories: forged, localRepo: 'simpsonm09', host: 'github.com', destination: 'simpsonm09/profile-forged' });
+    assert(target.kind === 'unknown', 'the forged local identity resolves to unknown');
+  } finally {
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -602,6 +694,36 @@ function testDestinationCli(assert) {
     assert(decision.allowed === true && decision.kind === 'owned-fork', 'the destination JSON carries the kind and the verdict');
     assert(decision.capability === 'pushBranch', 'the destination JSON carries the capability');
 
+    const standalone = ['--destination', PROFILE_REPOSITORY];
+    const standaloneAllowed = runResolver(['simpsonm09', ...common, ...standalone, '--intent', intent(), '--json']);
+    assert(standaloneAllowed.status === EXIT.OK, `an owned-repository branch push exits ${EXIT.OK}, got ${standaloneAllowed.status}`);
+    assert(JSON.parse(standaloneAllowed.stdout).kind === 'owned-repository', 'the CLI resolves the separate owned-repository kind');
+    const openPr = JSON.stringify({ operation: 'openPr', capability: 'openPr', readOnly: false, resolved: true, base: { branch: 'main' }, head: { branch: 'feat/x' } });
+    const standalonePr = runResolver(['simpsonm09', ...common, ...standalone, '--intent', openPr]);
+    assert(standalonePr.status === EXIT.OK, `a same-repository pull request exits ${EXIT.OK}, got ${standalonePr.status}`);
+    const qualifiedStandalonePr = JSON.stringify({ operation: 'openPr', capability: 'openPr', readOnly: false, resolved: true, base: { owner: 'SIMPSONM09', repo: 'SIMPSONM09', branch: 'main' }, head: { owner: 'simpsonm09', repo: 'SIMPSONM09', branch: 'feat/x' } });
+    const qualifiedPr = runResolver(['simpsonm09', ...common, ...standalone, '--intent', qualifiedStandalonePr]);
+    assert(qualifiedPr.status === EXIT.OK, `a case-insensitive full-identity pull request exits ${EXIT.OK}, got ${qualifiedPr.status}`);
+
+    const standaloneDenied = [
+      ['default branch push', intent({ refs: [{ kind: 'branch', name: 'main', isDefault: true }] })],
+      ['force push', intent({ force: true })],
+      ['deletion', intent({ delete: true })],
+      ['tag push', intent({ refs: [{ kind: 'tag', name: 'v1', isDefault: false }] })],
+      ['repo-only pull request base', JSON.stringify({ operation: 'openPr', capability: 'openPr', readOnly: false, resolved: true, base: { repo: 'other', branch: 'main' } })],
+      ['repo-only pull request head', JSON.stringify({ operation: 'openPr', capability: 'openPr', readOnly: false, resolved: true, head: { repo: 'other', branch: 'feat/x' } })],
+      ['owner-only pull request base', JSON.stringify({ operation: 'openPr', capability: 'openPr', readOnly: false, resolved: true, base: { owner: 'simpsonm09', branch: 'main' } })],
+      ['partial null pull request base', JSON.stringify({ operation: 'openPr', capability: 'openPr', readOnly: false, resolved: true, base: { owner: null, repo: 'simpsonm09', branch: 'main' } })],
+      ['empty pull request head identity', JSON.stringify({ operation: 'openPr', capability: 'openPr', readOnly: false, resolved: true, head: { owner: '', repo: '', branch: 'feat/x' } })],
+      ['cross-repository pull request', JSON.stringify({ operation: 'openPr', capability: 'openPr', readOnly: false, resolved: true, base: { owner: 'acme', repo: 'other', branch: 'main' } })],
+      ['merge', JSON.stringify({ operation: 'mergePr', capability: 'mergePr', readOnly: false, resolved: true })],
+      ['administration', JSON.stringify({ operation: 'admin', capability: 'admin', readOnly: false, resolved: true })],
+    ];
+    for (const [name, policyIntent] of standaloneDenied) {
+      const result = runResolver(['simpsonm09', ...common, ...standalone, '--intent', policyIntent]);
+      assert(result.status === EXIT.FAIL, `an owned repository denies ${name}, got ${result.status}`);
+    }
+
     const tag = { capability: 'pushMain', refs: [{ kind: 'tag', name: 'v1', isDefault: false }] };
     const tagPush = runResolver(['fixture-owned', ...common, ...destination, '--intent', intent(tag)]);
     assert(tagPush.status === EXIT.FAIL, `an owned-fork tag push exits ${EXIT.FAIL}, got ${tagPush.status}`);
@@ -669,6 +791,7 @@ export function runTest() {
     testApiBodyClassifier(assert);
     testDestinationPolicy(assert);
     testCommittedOwnedForks(assert);
+    testCommittedOwnedRepositories(assert);
     testHook(assert);
     testCli(assert);
     testDestinationCli(assert);

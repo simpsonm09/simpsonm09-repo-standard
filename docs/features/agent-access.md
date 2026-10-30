@@ -44,6 +44,25 @@ node scripts/agent-access.mjs pstack-max --host github.com \
 The `--allows` mode exits `0` when the level grants the capability and `1` when it
 does not, so a shell caller branches on the exit code.
 
+### Exact owned repositories
+
+`owned-repositories.json` in the catalog can list exact repositories owned by
+`simpsonm09` that have no recorded upstream. The resolver reads this policy only
+from `upstream/main`; a missing or invalid committed file disables these grants.
+The schema accepts only `repositories`, with entries containing `repository`
+and `agentAccess: "propose"`. Identities are case insensitive for matching, but
+must be fully qualified, unique, owned by the exact configured account, and must
+not collide with an owned-fork target or recorded upstream. No owner-prefix
+inference grants access.
+
+This destination kind grants `read`, a resolved push to one non-default branch,
+and a pull request whose head and base remain in that same repository. It denies
+default-branch, force, delete, and tag pushes; cross-repository pull requests;
+merges; administration; unknown destinations; and third-party repositories.
+This policy is separate from `owned-forks.json`, whose upstream provenance rules
+and existing decisions are unchanged. The profile repository remains ungranted
+until an exact entry is committed to the catalog.
+
 ## The command classifier
 
 `--command` classifies one shell command to the capability it needs, so a gate can
@@ -171,7 +190,7 @@ command text can widen a grant.
 | `resolved` | `false` when the destination or the ref kind could not be resolved |
 | `refs` | the pushed refs, each `{ kind, name, isDefault }` |
 | `force`, `delete` | the push flags that change what a refspec means |
-| `base`, `head` | the pull request sides, each `{ owner, repo, branch }` |
+| `base`, `head` | pull request sides; absent sides or branch-only sides with no identity fields use the observed same-repository shorthand, while any supplied `owner` or `repo` must be a non-empty, complete, case-insensitive match to the destination |
 
 `capability` is `null` for a known read or a local command, and that path
 requires `readOnly: true`. An intent that contradicts itself about writing is
