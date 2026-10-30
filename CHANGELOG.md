@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Request `issues: write` for the fleet agent App so policy-authorized issue
+  creation can work after an App owner approves the permission update and the
+  installation grant. This does not add App administration.
+- Validate active `protect-main` ruleset targeting when the API response is readable; ambiguous names and unmodeled target patterns produce gaps. API read failures remain notices and do not establish protection.
+- Update the five starter CI reusable workflow pins to the reviewed published standard commit `6f754925`.
+- Add a default coverage recipe and Python LCOV scaffold to the starter templates, and clarify that coverage opt-outs require a reviewed exception in the standard.
+- Make unmodeled `gh` commands require `admin` in the public command classifier,
+  while retaining known read commands and existing write-capability mappings.
+  Help/version controls count only as final tokens; `gh auth` commands,
+  including token-bearing status, and `gh repo sync` require `admin`.
+- Update the CodeQL workflow template to match the CodeQL action pin used by the repository workflow.
 - Add a separate committed `owned-repositories.json` resolver policy for exact
   `simpsonm09` identities without fork upstreams. Its `propose` mapping allows
   only non-default branch pushes and same-repository pull requests. Missing or

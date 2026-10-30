@@ -39,7 +39,10 @@ skip the API checks.
 | `env` | Git's index contains no actual `.env` file at any depth, and the pre-push hook rejects such filenames in every proposed ref's reachable history before upload. If a repository opts into the env convention, a root `.worktreeinclude` lists each local file, `.gitignore` ignores it, and each listed path has a committed sibling `.example` template. |
 | `subprocess` | Every `node:child_process` call in a source file passes a literal `windowsHide: true`. See [fleet-conformance.md](features/fleet-conformance.md). |
 | `settings` | The default branch is `main`, the description is set, and the owner topic is present. |
-| `ruleset` | A public repository carries `protect-main`, and its required checks match the repository's coverage state, with a job for each. |
+| `ruleset` | Successful API responses for a public repository are checked for exactly one active `protect-main` targeting `main`; its required checks match the repository's coverage state, with a job for each. |
+
+API read failures are reported as notices and do not establish protection. A
+`standard: ok` result does not prove complete API coverage when a read failed.
 
 Each gap prints its id and a one-line reason. Check ids are stable and are the
 values the exception file matches.

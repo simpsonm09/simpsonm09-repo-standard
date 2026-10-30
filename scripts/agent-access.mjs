@@ -494,12 +494,13 @@ const ORG_REMOTE_MARKER = 'simpsonm09-org';
 
 // A shell command needs one capability. The patterns are ordered, first match
 // wins, so the specific merge and create checks run before the generic push.
-// An unmatched command needs no capability: it does not reach GitHub, so the
-// level does not govern it and it is allowed.
+// Unmatched commands outside gh need no capability. An unmodeled gh command is
+// conservatively an admin write unless it matches the observer's small read
+// contract below.
 const COMMAND_RULES = [
   { capability: 'mergePr', test: (parts) => parts[0] === 'gh' && parts[1] === 'pr' && parts[2] === 'merge' },
   { capability: 'openPr', test: (parts) => parts[0] === 'gh' && parts[1] === 'pr' && parts[2] === 'create' },
-  { capability: 'admin', test: (parts) => isGhAdmin(parts) },
+  { capability: 'admin', test: (parts) => isGhAdmin(parts) || isUnmodeledGh(parts) },
   { capability: 'pushMain', test: (parts) => isGitPush(parts) && gitPushNeedsMain(parts) },
   { capability: 'pushBranch', test: (parts) => isGitPush(parts) },
 ];
@@ -511,8 +512,56 @@ const GH_ADMIN_VERBS = {
   release: ['create', 'edit', 'delete', 'upload'],
   workflow: ['run', 'enable', 'disable'],
   secret: ['set', 'delete'],
-  repo: ['create', 'delete', 'edit', 'rename', 'transfer', 'archive'],
+  repo: ['create', 'delete', 'edit', 'rename', 'transfer', 'archive', 'unarchive'],
 };
+
+// Keep the public classifier's read contract aligned with the fail-closed
+// observer. Anything outside these known read groups/verbs is not assumed safe.
+const GH_READ_GROUP_VERBS = {
+  pr: new Set(['list', 'view', 'status', 'diff', 'checks', 'checkout']),
+  issue: new Set(['list', 'view', 'status']),
+  repo: new Set(['list', 'view', 'clone']),
+  release: new Set(['list', 'view', 'download']),
+  workflow: new Set(['list', 'view']),
+  run: new Set(['list', 'view', 'watch', 'download']),
+  secret: new Set(['list']),
+  variable: new Set(['list', 'get']),
+  label: new Set(['list']),
+  project: new Set(['list', 'view', 'field-list', 'item-list']),
+  extension: new Set(['list', 'search']),
+  config: new Set(['get', 'list']),
+};
+const API_READ_METHODS = new Set(['GET', 'HEAD']);
+
+function isUnmodeledGh(parts) {
+  if (parts[0] !== 'gh' || isGhHelp(parts)) return false;
+  if (GH_ADMIN_VERBS[parts[1]]?.includes(parts[2])) return false;
+  if (parts[1] === 'api') return hasUnknownApiMethod(parts);
+  if (parts[1] === 'status') return false;
+  if (parts[1] === 'search') return !['code', 'commits', 'issues', 'prs', 'repos', 'topics', 'users'].includes(parts[2]);
+  if (GH_READ_GROUP_VERBS[parts[1]]?.has(parts[2])) return false;
+  return true;
+}
+
+function isGhHelp(parts) {
+  const last = parts.length - 1;
+  // Recognize control tokens only at the end of argv. A help/version token
+  // followed by another verb is ambiguous and must fail closed. Limit these
+  // controls to gh's command and group slots so title operands stay data.
+  if (last === 1 && ['-h', '--help', '--version'].includes(parts[1])) return true;
+  if (last === 2 && ['-h', '--help'].includes(parts[2])) return true;
+  // `gh help` itself is a control; help topics with trailing words are
+  // conservatively unmodeled because they can resemble a command sequence.
+  return parts[1] === 'help' && parts.length === 2;
+}
+
+function hasUnknownApiMethod(parts) {
+  for (let index = 2; index < parts.length; index += 1) {
+    const method = methodArgument(parts, index);
+    if (method !== null && method !== undefined && !API_READ_METHODS.has(method.toUpperCase())) return true;
+  }
+  return false;
+}
 
 function isGhAdmin(parts) {
   if (parts[0] !== 'gh') return false;
@@ -636,11 +685,11 @@ function methodArgument(parts, index) {
   return null;
 }
 
-// Split a shell command on whitespace and quotes. It is not a full shell parse,
-// only enough to reach the command and its git refspec. A command with no match
-// classifies to null, which decide treats as allowed. A git push whose known
-// remote URL is not the organization classifies to null: the hook is out of
-// scope for it, so the gate is too.
+// Split one command using the legacy whitespace/quote tokenizer. It is not a
+// shell parse: wrappers and compound commands are outside this CLI's contract.
+// A non-gh command with no match classifies to null. Unknown gh forms fail closed
+// through the admin fallback. A git push to a known non-organization remote is
+// out of scope for this classifier.
 export function classify(command, remoteUrl) {
   const parts = tokenize(command);
   if (!pushInScope(parts, remoteUrl)) return null;
@@ -738,6 +787,27 @@ export function selfTest() {
     ['gh workflow run ci.yml', 'admin'],
     ['gh secret set X', 'admin'],
     ['gh repo edit --description y', 'admin'],
+    ['gh pr edit 52 --base main', 'admin'],
+    ['gh issue create --title x', 'admin'],
+    ['gh unknown-command --admin', 'admin'],
+    ['gh pr view 1', null],
+    ['gh pr list', null],
+    ['gh help', null],
+    ['gh help pr', 'admin'],
+    ['gh --help', null],
+    ['gh --version', null],
+    ['gh -h issue create --title x', 'admin'],
+    ['gh --version issue create --title x', 'admin'],
+    ['gh issue --help create --title x', 'admin'],
+    ['gh help issue create --title x', 'admin'],
+    ['gh auth token', 'admin'],
+    ['gh auth status', 'admin'],
+    ['gh auth status --show-token', 'admin'],
+    ['gh auth status -t', 'admin'],
+    ['gh status', null],
+    ['gh search repos foo', null],
+    ['gh search foo x', 'admin'],
+    ['gh repo unarchive o/r', 'admin'],
     ['gh release list', null],
     ['gh workflow list', null],
     ['gh secret list', null],
@@ -748,7 +818,7 @@ export function selfTest() {
     ['gh api -X HEAD repos/o/r', null],
     ['gh api -XHEAD repos/o/r', null],
     ['gh api -X', null],
-    ['gh api -XPOSTED repos/o/r', null],
+    ['gh api -XPOSTED repos/o/r', 'admin'],
     ['gh api repos/o/r --jq .name', null],
     ['gh api repos/o/r --paginate', null],
     ['gh pr view 1', null],
@@ -779,6 +849,10 @@ export function selfTest() {
     ['none', 'npm test', true],
     ['read', 'gh api -X POST repos/o/r', false],
     ['full', 'gh api -X POST repos/o/r', true],
+    ['merge', 'gh pr edit 52 --base main', false],
+    ['merge', 'gh issue create --title x', false],
+    ['merge', 'gh unknown-command', false],
+    ['full', 'gh unknown-command', true],
     ['propose', 'git push origin --prune feat/x', false],
     ['merge', 'git push origin --prune feat/x', false],
     ['full', 'git push origin --prune feat/x', true],
