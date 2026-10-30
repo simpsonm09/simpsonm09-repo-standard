@@ -1,0 +1,150 @@
+{
+  "contractVersion": 1,
+  "status": "current-internal-contract-not-generic-public-api",
+  "portabilityBoundary": "Owner identifiers below describe this fleet's current implementation only. Contract version 1 is not a generic external API or proof of compatibility with another installation.",
+  "ownership": {
+    "policyAndResolver": "simpsonm09-repo-standard",
+    "fleetCatalog": "simpsonm09-repo-catalog",
+    "commandAndHarnessAdapters": "simpsonm09-org-ai-plugin",
+    "installationAndPins": "simpsonm09-maxstack"
+  },
+  "states": {
+    "localPortablePackage": "Contract, synthetic fixtures, and documentation; no server or network dependency.",
+    "separatePublicSourceRepository": "A source distribution choice independent of hosting.",
+    "publicGitHubApp": "An App visibility and installation choice independent of source publication.",
+    "hostedService": "Deferred; not implied by a package or separate source repository.",
+    "marketplaceListing": "Deferred; separate from source publication, App visibility, and hosting."
+  },
+  "authority": {
+    "classifier": "classify(command, remoteUrl)",
+    "destination": "resolveDestination(input)",
+    "target": "decideTarget(target, intent)",
+    "decisionMapping": "decideTarget(...).allowed true maps to allow and false maps to deny. A null classifier result is not a policy grant; it means this classifier has no capability result for that command.",
+    "githubComUnknownDestinationWithTrustedIgnorePolicy": "read-only baseline; writes denied",
+    "nonGitHubHost": "resolves unknown before ignore-policy validation and retains the read-only baseline",
+    "explicitlyIgnoredDestination": "deny reads and writes",
+    "ignorePolicyUnavailableOnGitHubCom": "deny reads and writes for every github.com destination",
+    "unresolvedOrUnsupportedWrite": "deny",
+    "catalogStatus": "This contract does not assert that current fleet catalog defaults have migrated to full.",
+    "adapterMigrationStatus": "Installed API version 3 is pending migration; this contract does not claim that installed adapters consume contract version 1.",
+    "note": "The shipped APIs remain authoritative; this contract does not define a second decision function or reason-code parser."
+  },
+  "levels": {
+    "propose": {
+      "capabilities": ["read", "pushBranch", "openPr"],
+      "mainPullRequestApprovals": 1,
+      "approvalMainBypass": "OrganizationAdmin may bypass only the approval rule for a pull request"
+    },
+    "merge": {
+      "capabilities": ["read", "pushBranch", "openPr", "mergePr"],
+      "mainPullRequestApprovals": 1,
+      "approvalMainBypass": "OrganizationAdmin may bypass only the approval rule for a pull request"
+    },
+    "full": {
+      "capabilities": ["read", "pushBranch", "openPr", "mergePr", "pushMain", "admin"],
+      "mainPullRequestApprovals": 0,
+      "approvalMainBypass": "none",
+      "pullRequestReviewGate": "Every full pull request, including CI, security, and permission-changing pull requests, requires zero human approvals. protect-main required checks still apply; there is no path-based rule.",
+      "adminCeiling": "The policy capability does not grant repository administration permission; operations requiring administration remain unavailable to the App. Other operations still require their specific manifest permission."
+    }
+  },
+  "appPermissionCeiling": {
+    "manifest": "agent-app.manifest.json",
+    "requested": {
+      "metadata": "read",
+      "contents": "write",
+      "pull_requests": "write",
+      "workflows": "write",
+      "checks": "read"
+    },
+    "notRequested": ["administration", "issues", "actions", "secrets"],
+    "installationGrantStatus": "Not verified. Present in the manifest describes only the App's requested ceiling; an installation may still lack an accepted permission.",
+    "operationPermissionExamples": {
+      "scope": "Documented endpoint examples only, not a complete mapping for any classifier capability. `present-in-manifest` is not proof of an accepted installation grant.",
+      "examples": [
+        { "operation": "createPullRequest", "endpoint": "POST /repos/{owner}/{repo}/pulls", "permissionsAllOf": ["pull_requests:write"], "manifestStatus": "present-in-manifest" },
+        { "operation": "mergePullRequest", "endpoint": "PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge", "permissionsAllOf": ["contents:write"], "manifestStatus": "present-in-manifest" },
+        { "operation": "createIssue", "endpoint": "POST /repos/{owner}/{repo}/issues", "permissionsAllOf": ["issues:write"], "manifestStatus": "absent-from-manifest" },
+        { "operation": "dispatchEnableOrDisableWorkflow", "endpoints": ["POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches", "PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/enable", "PUT /repos/{owner}/{repo}/actions/workflows/{workflow_id}/disable"], "permissionsAllOf": ["actions:write"], "manifestStatus": "absent-from-manifest" },
+        { "operation": "modifyWorkflowFile", "endpoint": "PUT /repos/{owner}/{repo}/contents/{path} where path is under .github/workflows", "permissionSetsAnyOf": [["contents:write"], ["contents:write", "workflows:write"]], "manifestStatus": "present-in-manifest" },
+        { "operation": "createOrUpdateRepositorySecret", "endpoint": "PUT /repos/{owner}/{repo}/actions/secrets/{secret_name}", "permissionsAllOf": ["secrets:write"], "manifestStatus": "absent-from-manifest" },
+        {
+          "operation": "createRelease",
+          "endpoint": "POST /repos/{owner}/{repo}/releases",
+          "permissionSetsAnyOf": [["contents:write"], ["contents:write", "workflows:write"]],
+          "manifestStatus": "present-in-manifest"
+        },
+        { "operation": "updateRepositorySettings", "endpoint": "PATCH /repos/{owner}/{repo}", "permissionsAllOf": ["administration:write"], "manifestStatus": "absent-from-manifest" },
+        { "operation": "unmodeledRESTWrite", "permissionsAllOf": "endpoint-specific; inspect the exact endpoint documentation", "manifestStatus": "not-inferable-from-classifier" }
+      ]
+    },
+    "officialPermissionDocumentation": [
+      "https://docs.github.com/en/rest/actions/workflows",
+      "https://docs.github.com/en/rest/pulls/pulls",
+      "https://docs.github.com/en/rest/issues/issues",
+      "https://docs.github.com/en/rest/actions/secrets",
+      "https://docs.github.com/en/rest/releases/releases",
+      "https://docs.github.com/en/rest/repos/repos",
+      "https://docs.github.com/en/rest/repos/contents"
+    ],
+    "issueCreation": "Policy classifies issue creation under openPr, but App transport is unavailable until issues:write is reviewed, added to the manifest, and granted by the installation.",
+    "permissionRule": "A workspace level cannot exceed the App manifest and accepted installation permissions."
+  },
+  "mainProtection": {
+    "protect-main": {
+      "pullRequestRequired": true,
+      "signedCommitsRequired": true,
+      "requiredChecksStrict": true,
+      "requiredCheckContexts": {
+        "baseContexts": [
+        "lint / flint",
+        "aislop / aislop",
+        "security / trivy",
+        "security / secrets",
+        "standard / standard",
+        "test"
+        ],
+        "coverage": { "context": "coverage / coverage", "requiredWhen": "repository has no ci/coverage exception in docs/exceptions.json", "notRequiredWhen": "repository has a ci/coverage exception in docs/exceptions.json" }
+      },
+      "bypassActors": []
+    },
+    "agentAppBypass": false,
+    "approvalBypassScope": "approval-main only; OrganizationAdmin pull_request bypass for propose and merge; none for full",
+    "enforcement": "GitHub rulesets are the hard enforcement point; this contract is not a second local approval engine."
+  },
+  "transport": {
+    "installationTokenScope": "one named repository, with current installation permission defaults",
+    "perOperationPermissionNarrowing": false,
+    "issuePermissionAvailable": false,
+    "fallbackIdentity": "none; an unavailable App route must not silently switch to ambient human credentials",
+    "tokenVisibility": "Never expose token values to model-facing output, logs, audit records, errors, or files.",
+    "currentLimitation": "The existing broker can print a token to stdout and its direct launcher is reachable to local processes. This unit does not change that broker or prove universal shell isolation; do not probe credentials or invoke the direct launcher."
+  },
+  "evidenceFields": [
+    "operation",
+    "capability",
+    "destinationClass",
+    "authorizationRoute",
+    "resolverPin",
+    "decision"
+  ],
+  "evidenceLimits": "Actor-route values are audit metadata, not proof of the actor that executed an operation. Do not include command bodies, private paths, token values, secrets, or repository content. Evidence recording does not require a sink and sink availability is not an authorization gate.",
+  "identityRoutingTarget": {
+    "status": "planned-unconsumed-contract",
+    "module": "scripts/lib/agent-identity-route.mjs",
+    "policyAuthority": "Existing classify, resolveDestination, and decideTarget APIs remain authoritative. The planner re-evaluates resolveDestination and decideTarget for the exact supplied target and intent; it never consumes a precomputed allow. Policy data and parsed intent remain trusted caller inputs. Supported permission examples are repository read, branch push, and PR creation only; unsupported operations deny.",
+    "topology": "Agent reads and writes require an exact-target GitHub App installation. Private/public visibility and App ownership are undecided; no installation or activation is implied.",
+    "agentFailureBehavior": "Deny on policy denial, missing installation, target/account mismatch, or any required permission outside both the manifest ceiling and accepted installation permissions. Never fall back to ambient human credentials for reads or writes.",
+    "humanBehavior": "Return pass-through/not-governed metadata only. This is not an authorization grant and does not run ambient credentials. Ordinary human CLI and UI settings remain untouched.",
+    "reasonCodes": ["invalid-input", "policy-denied", "installation-missing", "target-mismatch", "permission-unavailable", "credential-unavailable", "invocation-failed"],
+    "evidenceStates": ["planned", "observed-app", "observed-human", "unknown"],
+    "identityFields": {
+      "authenticationActor": "Observed from GitHub operation evidence; otherwise unknown. A planned route is not an observed actor.",
+      "author": "Commit author metadata; never derives the authentication actor.",
+      "committer": "Commit committer metadata; never derives the authentication actor.",
+      "signer": "Commit signature identity and verification; never derives the authentication actor."
+    },
+    "testPorts": "The asynchronous fake credential/invocation port is a local contract fixture only, not broker enforcement or runtime credential handling. Its opaque handles are not serialized or returned.",
+    "runtimeAdoption": "Not implemented. Installed adapter API version 3 remains unconsumed; the contract does not claim universal shell isolation or complete separation."
+  }
+}
