@@ -24,3 +24,9 @@ run = "flint run --fix"
 [tasks.test]
 description = "Run the tests"
 run = "pytest"
+
+# Replace this Python example with the project's real coverage command and
+# dependency installation. The shared workflow requires coverage/lcov.info.
+[tasks.coverage]
+description = "Run tests with coverage and write coverage/lcov.info"
+run = ["python -m pip install -e \".[test]\"", "pytest --cov=src --cov-report=lcov:coverage/lcov.info"]

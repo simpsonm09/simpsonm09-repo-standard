@@ -60,7 +60,19 @@ The API groups are `settings` and `ruleset`.
 
 - `settings` requires the default branch to be `main`, the description to be set, and
   the owner topic to be present.
-- `ruleset` requires `protect-main` on a public repository, and requires its required checks to match the repository's coverage state. Each required check needs a job in `ci.yml`. The rule is in [governance.md](../governance.md#required-checks).
+- `ruleset` requires exactly one `protect-main` ruleset on a public repository. It must be active, target `main`, and require checks matching the repository's coverage state. Each required check needs a job in `ci.yml`. The rule is in [governance.md](../governance.md#required-checks).
+
+The target check evaluates `refs/heads/main`, `~DEFAULT_BRANCH` (when the API reports
+`main` as the default branch), `~ALL`, and a limited locally modeled subset of
+patterns: `*` without crossing `/`, `?` within one path segment, `**` as any sequence,
+and positive bracket sets. It does not model `**/`, braces, or malformed ranges.
+Exclusions override inclusions.
+Missing conditions and patterns the checker does not model produce a gap, so they
+cannot prove main coverage. Successful API responses are validated for the active
+ruleset and target. API read failures remain notices; they do not establish
+protection, and `standard: ok` does not prove complete API coverage. This check
+validates the repository ruleset's branch condition; it does not inventory
+organization rulesets.
 
 A repository cannot read its own secret scanning, push protection, or merge methods
 with its own token, so those are applied once and not audited. See

@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- Add committed `upstream/main:ignore.json` destination denies and validate full
+  case-insensitive identities. Preserve broad `full` push/admin capabilities,
+  resolve invalid or missing policy levels to the internal read-only baseline,
+  check organization push and paired-fork PR operands, classify ordinary PR
+  management and issue creation at `openPr`, and keep milestone operations at
+  `admin`. For one supported simple command, return a never-granted `forbidden`
+  capability for approval/dismissal, admin-merge flags, canonical REST
+  review-route writes, and recognized GraphQL review mutations, including at
+  `full`. Ambiguous review API endpoint spellings containing leading `//`, dot
+  segments, or percent encoding are conservatively forbidden without assuming
+  GitHub normalization. Literal executable basenames are matched case-insensitively
+  with `.exe` removed; escapes or expansions in the first word are forbidden.
+  Unsupported argument expansion, command substitution, globbing, or escape
+  syntax is forbidden on governed `gh` and `git push` commands. Bash `%`, `^`,
+  and `!` punctuation remains literal data. The tokenizer supports one simple
+  command only; wrappers and compounds remain outside its scope. This is not
+  universal shell enforcement or branch protection.
+- Validate active `protect-main` ruleset targeting when the API response is readable; ambiguous names and unmodeled target patterns produce gaps. API read failures remain notices and do not establish protection.
+- Update the five starter CI reusable workflow pins to the reviewed published standard commit `6f754925`.
+- Add a default coverage recipe and Python LCOV scaffold to the starter templates, and clarify that coverage opt-outs require a reviewed exception in the standard.
+- Make unmodeled `gh` commands require `admin` in the public command classifier,
+  while retaining known read commands and existing write-capability mappings.
+  Help/version controls count only as final tokens; `gh auth` commands,
+  including token-bearing status, and `gh repo sync` require `admin`.
+- Update the CodeQL workflow template to match the CodeQL action pin used by the repository workflow.
 - Add a separate committed `owned-repositories.json` resolver policy for exact
   `simpsonm09` identities without fork upstreams. Its `propose` mapping allows
   only non-default branch pushes and same-repository pull requests. Missing or

@@ -8,9 +8,10 @@ resolver and the push guard live here, because the standard owns enforcement.
 ## The level
 
 `repos.json` carries a default per tier in `agentAccessDefaults` and an optional
-`agentAccess` override on a repository. The effective level is the override when
-present, otherwise the tier default. The levels, strictest first, are `none`,
-`read`, `propose`, `merge`, and `full`.
+`agentAccess` override on a repository. The effective selectable level is the
+override when present, otherwise the tier default. The selectable levels are
+`propose`, `merge`, and `full`. `read` is an internal baseline for unknown
+repositories and invalid or missing policy values; it grants no writes.
 
 ## Capabilities
 
@@ -20,8 +21,7 @@ capability, so the mapping from the policy to a decision lives in one table in
 
 | Level | Grants |
 | --- | --- |
-| `none` | Nothing. |
-| `read` | `read` |
+| Internal `read` baseline | `read` |
 | `propose` | `read`, `pushBranch`, `openPr` |
 | `merge` | `read`, `pushBranch`, `openPr`, `mergePr` |
 | `full` | `read`, `pushBranch`, `openPr`, `mergePr`, `pushMain`, `admin` |
@@ -30,6 +30,27 @@ capability, so the mapping from the policy to a decision lives in one table in
 
 [`../../scripts/agent-access.mjs`](../../scripts/agent-access.mjs) reads the catalog
 and resolves one repository.
+
+Destination mode also reads `ignore.json` from `upstream/main` only. The optional
+`agentAccessIgnore` field is an array of full `owner/repository` identities on an
+existing ignore entry. Each repository name must match that entry's `name`;
+identities are matched case insensitively and duplicates or malformed entries
+invalidate the committed policy. An ignored destination is denied before read or
+null-capability handling. A missing or invalid committed ignore file makes
+destination mode exit `2` and deny the decision. The resolver does not inspect
+the ignored repositories.
+
+The exported resolver API now includes `loadCommittedIgnore(dir)` and
+`FORBIDDEN_CAPABILITY`. The organization plugin bundle must update its pinned
+resolver API to version 5, load the committed ignore policy, and pass it as
+`ignore` to `resolveDestination(...)`. Its command adapter must preserve the
+exact capability returned by `classify`; it must pass `forbidden` through to
+`decideTarget` or deny it directly. It must not remap `forbidden` to `mergePr`
+or `admin`. Structured intents may use `capability: 'forbidden'`; the resolver
+denies that value at every target and level. `--allows` remains a capability
+query and is not an authorization decision for a classified command. The `ROOT`
+declaration remains the bundle's catalog-location bootstrap and must appear
+exactly once.
 
 ```bash
 node scripts/agent-access.mjs simpsonm09-repo-catalog              # prints the level
@@ -82,16 +103,86 @@ match wins.
 | Command | Needs |
 | --- | --- |
 | `gh pr merge ...` | `mergePr` |
-| `gh pr create ...` | `openPr` |
+| `gh pr merge ... --admin` (including a bare `--admin` in any operand position) | `forbidden` |
+| `gh pr create\|edit\|close\|reopen\|ready\|comment\|review\|update-branch ...` | `openPr` |
+| `gh issue create ...` | `openPr` |
+| `gh pr review` with only recognized comment or request-changes flags | `openPr` |
+| `gh pr review` with approval, dismissal, unknown flags, or unsupported quoting | `forbidden` |
+| PR create/edit or issue create with `-m`, `--milestone`, or `--remove-milestone` | `admin` |
 | `git push <remote> main` or `refs/heads/main` | `pushMain` |
 | `git push <remote> refs/tags/<tag>`, or a `--tags`, `--all`, `--mirror`, `--follow-tags`, `--delete`, or `--prune` flag | `pushMain` |
 | `git push <remote> <other-ref>` | `pushBranch` |
 | `gh release create\|edit\|delete\|upload` | `admin` |
 | `gh workflow run\|enable\|disable` | `admin` |
 | `gh secret set\|delete` | `admin` |
-| `gh repo create\|delete\|edit\|rename\|transfer\|archive` | `admin` |
-| `gh api` with `-X`/`--method` `POST`/`PUT`/`PATCH`/`DELETE` — including the attached `-XDELETE` gh accepts — or with `-f`/`--field`/`--raw-field`/`--input`, including the attached `-fkey=value` form | `admin` |
-| any other command | none, allowed |
+| `gh repo create\|delete\|edit\|rename\|transfer\|archive\|unarchive\|sync` | `admin` |
+| An unmodeled `gh` command | `admin` |
+| Known read forms such as `gh pr view`/`list`, `gh status`, and known `gh search` groups | none |
+| `gh auth` commands, including `gh auth token` and `gh auth status --show-token` | `admin` |
+| Bare `gh -h`, `gh --help`, and `gh --version` final controls | none |
+| Other `gh` forms, including an unknown group followed by a read-looking verb | `admin` |
+| `gh api` with an explicit method other than `GET`/`HEAD`, including unknown methods and attached `-XDELETE`, or with `-f`/`--field`/`--raw-field`/`--input` | `admin` |
+| A write to a REST pull-request review route or a recognized GraphQL review mutation | `forbidden` |
+| Any other well-formed, unmodeled non-`gh` command | none, allowed |
+
+The `gh` read contract is intentionally narrow: only listed known read group/verb
+pairs remain unclassified; every other `gh` form needs `admin`. Help and version
+controls are recognized only when the control token is the final argument, never
+by scanning operands such as a title value. A help/version token before another
+argument, and help topics with trailing words, need `admin`. All `gh auth`
+commands need `admin` because token-printing options can expose credentials.
+`gh repo sync` is admin-only; this intentional tightening can deny the fork sync
+workflow at `merge` level and requires its operator to have `admin`. `gh api` with
+an explicit method other than `GET` or `HEAD`,
+including an unknown method, needs `admin`; an omitted method remains a read.
+The `--command` tokenizer supports one command made of whitespace-separated
+tokens with quote grouping and joined adjacent quoted/unquoted fragments. It
+models only the literal quoting needed for this boundary; it is not a shell
+interpreter. A malformed quote returns `forbidden` for any command. The first
+word is checked before command policy lookup: shell escapes or expansions there
+are forbidden, while a literal executable name is matched by its basename,
+case-insensitively, with a final `.exe` removed. This recognizes forms such as
+`GH`, `gh.exe`, `/usr/bin/gh`, and a quoted Windows path ending in `gh.exe`
+without matching unrelated names such as `notgh.exe`.
+
+For arguments, `$` parameter expansion, backticks for command substitution,
+brace expansion, and glob characters are unsupported syntax; on recognized
+`gh` commands and `git push`, they return `forbidden`. Bash punctuation `%`,
+`^`, and `!` remains literal data, including inside quoted PR titles and bodies.
+Single-quoted values preserve all their contents. Unquoted backslash escapes are tokenized literally and remain
+unsupported on governed commands. Inside double quotes, only Bash's special
+backslash escapes for `"`, `\\`, `$`, and backtick are interpreted as escapes
+and are unsupported on governed commands. Other backslashes remain literal, so
+a quoted Windows executable path can be recognized; Windows path arguments on
+governed commands may still be conservatively denied when backslashes form
+actual escape sequences. A valid local commit message such as
+`git commit -m 'don'\''t'` is accepted by this bounded tokenizer.
+
+This is a finite, supported single-command grammar. It does not inspect leading
+environment assignments, wrappers such as `env`, `command`, or `xargs`, nested
+commands such as `bash -c` or command substitutions, separators (`&&`, `;`, `|`),
+newlines, or later commands in a compound expression. These forms remain outside
+this resolver unit and require a separate organization observer. A genuinely
+unbalanced quote, including one in a heredoc body, is forbidden even for an
+ordinary local command. This is a known false denial. Structured push intents
+and standalone command classification are separate interfaces; the command
+classifier continues to classify explicit force/refspec forms by its current
+rules and this change does not broaden that contract.
+
+A bare `--admin` in any `gh pr merge` operand position is denied conservatively,
+even when it is a value such as a subject. Other unmodeled `gh` forms require
+`admin` within this single-command scope.
+
+REST route checks inspect every token for a canonical route, including canonical
+absolute `https://api.github.com` URLs, query suffixes, and any subtree below
+`/pulls/{number}/reviews`. Canonical route and URL spellings are recognized; an
+API write with an endpoint-like token containing a leading `//`, dot segments,
+or percent encoding is conservatively forbidden instead of assuming how GitHub
+or `gh` normalizes it. This is a boundary choice, not a claim that GitHub accepts
+those spellings. As a conservative rule, an exact route-shaped token in an API
+body value is also forbidden. GraphQL review mutations are denied when the
+canonical `graphql` endpoint token and mutation can be inspected; opaque input
+remains forbidden.
 
 A `git push` is parsed by tokens, not by position. A flag token (leading `-`) is
 skipped, the first non-flag token is the remote when it is not a refspec, and the
@@ -105,6 +196,13 @@ same way: it removes the remote refs the refspec does not cover, so it writes a
 scope the command does not name. Any other branch refspec is `pushBranch`,
 and no refspec is `pushBranch`. This handles a flag before the remote or the ref,
 so `git push --dry-run origin main` is `pushMain`.
+
+The command-string classifier does not interpret `--force`, a leading `+` in a
+refspec, or resolve an unqualified destination such as `HEAD:v1` against remote
+refs. Those command forms retain their existing `pushBranch` classification and
+can be allowed at `propose`; for example, `HEAD:v1` could name a tag if that tag
+exists remotely. Structured push intents independently deny a force push. This
+is a documented boundary between the two interfaces.
 
 An `api` method is read the same way, by token. `-X` and `--method` take the next
 token, `--method=POST` carries its own value, and `-XDELETE` appends the value to
@@ -122,6 +220,19 @@ begins with `--`, so it is never read as an attached short flag, and
 `decide(level, command, remoteUrl)` returns `{ capability, allowed }`. A command
 with no capability reaches nothing governed, so every level allows it. The command
 mode exits `0` when allowed and `1` when denied.
+
+The classifier returns the never-granted `forbidden` capability for admin merge,
+review approval/dismissal, unsafe review flags, and review API writes. `decide`,
+`--command`, and `decideTarget` deny it at every level, including `full`.
+REST review routes are matched narrowly; unrelated API admin writes remain
+`admin`. GraphQL review mutations are denied, and an opaque GraphQL query file
+fails closed because its mutation cannot be inspected. `--allows admin` is only
+a capability query and cannot authorize a specific command. The structured
+destination API also validates operands:
+organization pushes require a resolved single ref; force and delete are denied;
+and a PR base must stay in the destination while its head may use the paired
+`simpsonm09/<repository>` fork. An adapter that constructs structured intents
+must forward the classifier capability unchanged, including `forbidden`.
 
 ## The push scope
 
@@ -151,9 +262,9 @@ way? The policy is pure. It takes a destination and a structured intent, and it
 returns one verdict.
 
 ```js
-resolveDestination({ roster, ownedForks, localRepo, host, destination })
+resolveDestination({ roster, ownedForks, ignore, localRepo, host, destination })
   // -> { kind, owner, repo, level, source, upstream? }
-  // kind is 'org' | 'owned-fork' | 'upstream' | 'unknown'
+  // kind is 'ignored' | 'org' | 'owned-fork' | 'upstream' | 'unknown'
 decideTarget(target, intent)
   // -> { allowed, capability, reason }
 ```
@@ -164,11 +275,15 @@ malformed destination, is `unknown`. First match wins:
 
 | Destination | Kind | Level |
 | --- | --- | --- |
+| exact identity in `ignore.json` | `ignored` | no capabilities; denied before read checks |
 | owner is the roster `org` and the repository is in the roster | `org` | the roster level |
 | the personal owner's fork of the clone's own governed repository | `org` | the same roster level |
 | a target recorded in `owned-forks.json` | `owned-fork` | `propose` |
-| a recorded `upstream` in `owned-forks.json` | `upstream` | `none` |
-| anything else | `unknown` | `none` |
+| a recorded `upstream` in `owned-forks.json` | `upstream` | internal `read` baseline |
+| anything else | `unknown` | internal `read` baseline |
+
+An identity in `agentAccessIgnore` resolves to `ignored` before other destination
+matches. It denies reads and writes, including intents with a null capability.
 
 A repository and its personal push fork share one level on purpose. The fork is
 not a second grant; it is the same policy applied to the fork the clone pushes
@@ -390,7 +505,7 @@ a clone under `projects\repos` or a worktree of one. Any other path is not gated
   the package in Pi's saved `packages` list.
 
 All adapters decide from the first command only. They do not inspect scripts or later
-commands in a chain. Unclassified commands can pass, and the adapters differ in failure
+commands in a chain. Unclassified non-`gh` commands can pass, and the adapters differ in failure
 handling, prompting, and shell coverage. The plugin README's [Known limits](https://github.com/simpsonm09-org/simpsonm09-org-ai-plugin#known-limits)
 and [Known limits (Pi)](https://github.com/simpsonm09-org/simpsonm09-org-ai-plugin#known-limits-pi)
 sections have the complete shared and harness-specific list, including behavior that has not been
