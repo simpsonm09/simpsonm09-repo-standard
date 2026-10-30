@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Validate active `protect-main` ruleset targeting when the API response is readable; ambiguous names and unmodeled target patterns produce gaps. API read failures remain notices and do not establish protection.
-- Update the five starter CI reusable workflow pins to the reviewed published standard commit `6f754925`.
+- Update the five starter CI reusable workflow pins to the reviewed published standard commit `864a6a7c` after PR 66 closed the live main-ruleset validation gap.
 - Add a default coverage recipe and Python LCOV scaffold to the starter templates, and clarify that coverage opt-outs require a reviewed exception in the standard.
 - Make unmodeled `gh` commands require `admin` in the public command classifier,
   while retaining known read commands and existing write-capability mappings.
