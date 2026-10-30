@@ -21,7 +21,7 @@ import { checkStandard } from './check-standard.mjs';
 import { jobsCalling, parseJobs } from './lib/ci.mjs';
 import { loadExceptions } from './lib/exceptions.mjs';
 import { isMain } from './lib/proc.mjs';
-import { COVERAGE_CONTEXT, expectedChecks, kindOf, requiredGaps, rulesetGaps, uncoveredCallGaps } from './lib/required.mjs';
+import { ALL_CHECKS_REQUIRED, COVERAGE_CONTEXT, expectedChecks, kindOf, requiredGaps, rulesetGaps, uncoveredCallGaps } from './lib/required.mjs';
 
 const CHECK_REPO = fileURLToPath(new URL('./check-repo.mjs', import.meta.url));
 const EXCEPTIONS = fileURLToPath(new URL('../docs/exceptions.json', import.meta.url));
@@ -99,6 +99,8 @@ function testKindOf(assert) {
 }
 
 function testExpectedChecks(assert) {
+  assert(!ALL_CHECKS_REQUIRED, 'all-checks stays outside required ruleset contexts until consumers are ready');
+  assert(!expectedChecks('covered').includes('all-checks') && !expectedChecks('uncovered').includes('all-checks'), 'staged rollout does not break consumers before they report all-checks');
   assert(expectedChecks('covered').includes(COVERAGE_CONTEXT), 'a covered repository expects coverage / coverage');
   assert(!expectedChecks('uncovered').includes(COVERAGE_CONTEXT), 'an uncovered repository does not expect coverage / coverage');
   for (const kind of ['covered', 'uncovered']) {

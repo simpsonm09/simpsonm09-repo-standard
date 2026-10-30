@@ -6,6 +6,10 @@ import { findException } from './exceptions.mjs';
 
 export const COVERAGE_CONTEXT = 'coverage / coverage';
 
+// Roll this on only after every consuming repository reports the aggregate.
+// The CI contract is checked from day one; ruleset expectations remain gated.
+export const ALL_CHECKS_REQUIRED = false;
+
 // Every repository reports these, so every repository requires them.
 export const BASE_CONTEXTS = Object.freeze([
   'lint / flint',
@@ -29,7 +33,8 @@ export function kindOf(exceptions, repo) {
 }
 
 export function expectedChecks(kind) {
-  return kind === 'covered' ? [...BASE_CONTEXTS, COVERAGE_CONTEXT] : [...BASE_CONTEXTS];
+  const checks = kind === 'covered' ? [...BASE_CONTEXTS, COVERAGE_CONTEXT] : [...BASE_CONTEXTS];
+  return ALL_CHECKS_REQUIRED ? [...checks, 'all-checks'] : checks;
 }
 
 // The job that reports a required check. "lint / flint" is reported by the caller
