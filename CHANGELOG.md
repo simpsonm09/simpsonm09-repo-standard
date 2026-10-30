@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add a separate committed `owned-repositories.json` resolver policy for exact
+  `simpsonm09` identities without fork upstreams. Its `propose` mapping allows
+  only non-default branch pushes and same-repository pull requests. Missing or
+  invalid committed policy grants nothing; no production profile entry is added.
+  Pull request sides use branch-only shorthand only when owner and repository
+  identity fields are omitted; any supplied identity must fully match the target.
 - Reject actual `.env` files and runtime variants in Git's index and before any push, including personal-fork pushes and filenames later deleted in branch history. Keep `.env.example` templates tracked and local `.env` files in `.worktreeinclude` so worktrees can copy them.
 - Scope GitHub App installation tokens to the requested repository. Existing
   installation permission defaults remain unchanged.
