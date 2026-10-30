@@ -10,6 +10,7 @@ import { checkSubprocess } from './lib/subprocess.mjs';
 import { checkDocs, hasCoverageRecipe } from './lib/docs.mjs';
 import { EXTERNAL_WORKFLOW, LOCAL_WORKFLOW, findUses, jobsCalling, parseJobs } from './lib/ci.mjs';
 import { COVERAGE_MISSING_MESSAGE } from './lib/required.mjs';
+import { allChecksGaps, codeownersGaps } from './lib/all-checks.mjs';
 import { normalize, readText } from './lib/tree.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -95,6 +96,8 @@ function checkCi(root, add) {
   const text = normalize(readText(file));
   const jobs = parseJobs(text);
   const isSelf = root === STANDARD_ROOT;
+
+  for (const gap of allChecksGaps(jobs, { windows: isSelf, macos: isSelf })) add(gap.id, gap.message);
 
   for (const job of SHARED_JOBS) checkSharedJob(job, jobs, EXTERNAL_WORKFLOW, LOCAL_WORKFLOW, isSelf, add);
 
@@ -187,6 +190,8 @@ function checkCommunity(root, add) {
     const sourceText = normalize(readText(source)).replace(/\r\n/g, '\n');
     if (targetText !== sourceText) add(`community/${rel}`, `${rel} differs from repo-standard`);
   }
+  const owners = join(root, 'CODEOWNERS');
+  if (existsSync(owners)) for (const gap of codeownersGaps(normalize(readText(owners)))) add(gap.id, gap.message);
 }
 
 export { checkScripting, checkEnv };

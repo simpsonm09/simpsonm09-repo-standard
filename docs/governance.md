@@ -44,6 +44,12 @@ Targets `refs/tags/v*`. Blocks update, deletion, and force push.
 
 A required status check must be reported by a job that the repository runs. A required check with no job never reports, so every pull request waits on it forever. The required set follows the repository's coverage job.
 
+The local `ci.yml` workflow also has an `all-checks` job. It waits for every other job declared in that workflow and succeeds only when every dependency result is `success`; failure, cancellation, and skipping fail the aggregate. The checker requires the dependency list to close over every job, including platform test jobs, rejects `continue-on-error`, and limits the aggregate to the supported safe shape. This reusable-workflow caller contract is structurally checked; its result propagation has not yet been proven by a real fixture-repository run.
+
+`all-checks` is deliberately not yet in the required ruleset contexts. The exported `ALL_CHECKS_REQUIRED` readiness flag in `scripts/lib/required.mjs` remains false while consumers are migrated. Rollout order: add the aggregate to each repository's `ci.yml`, verify a green run and caller propagation, then enable the flag in the ruleset contract. This lets the aggregate exist before enforcement and avoids making repositories fail while they have not reported it. It does not rename or replace any existing required context.
+
+The aggregate covers jobs in `.github/workflows/ci.yml` only. A separate `codeql.yml` workflow is outside its `needs` graph. The committed `protect-main` payload does not require CodeQL, and [automation.md](automation.md#codeql) says it is not a required status check. No live repository contexts were read for this change; leave any existing live CodeQL requirement untouched during rollout. Do not treat `all-checks` as proof that every workflow or every possible check has passed.
+
 A repository has one of two coverage states.
 
 - **Covered.** The repository has a coverage job. It calls the shared `coverage` workflow, defines the `coverage` recipe, and requires `coverage / coverage`. Covered is the default: a repository is covered unless it has an entry, below.
@@ -63,7 +69,7 @@ The apply script builds each repository's payload from the committed file. It ad
 
 ## Code owners and reviewers
 
-`CODEOWNERS` is `* @simpsonm09` in every repository. GitHub auto-requests the code owner as an optional reviewer, because `require_code_owner_review` is `false`. The review is not a gate.
+`CODEOWNERS` must include the default line `* @simpsonm09`; repositories may retain specific path routes, comments, and additional owners. GitHub auto-requests the code owner as an optional reviewer, because `require_code_owner_review` is `false`. The review is not a gate.
 
 GitHub never requests the pull-request author as a reviewer. A self-authored pull request shows no request. This is expected, not a missing configuration.
 
